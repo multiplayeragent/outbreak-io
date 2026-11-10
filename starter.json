@@ -1,0 +1,21 @@
+{
+  "name": "Outbreak IO",
+  "genre": "horror",
+  "dim": "2D",
+  "mode": "Drop-in",
+  "players": "2–20",
+  "hook": "One bite and you're one of them.",
+  "how": "A zombie or two rise from the graveyard and every survivor they touch turns too. Survivors win if anyone is still human when the timer runs out; grab speed shoes, decoys, flashbangs and boards around town, and shove zombies back when they get close.",
+  "controls": "WASD or hold the mouse to run, Space to shove, E to use your item; on touch, drag to run and tap SHOVE or the item button",
+  "uses": [
+    ["Leaderboard", "Each player's best round: seconds survived, bites and a bonus for lasting to the end."],
+    ["Host-run rules", "The host's browser decides every bite, pickup, stun and barricade; if it leaves, the next player takes over."],
+    ["Bots", "Bots fill both sides: survivors run and use items, zombies hunt the nearest human."],
+    ["Live sync", "Every player, zombie, item and boarded-up door is the same for everyone."]
+  ],
+  "ideas": [
+    "Add a safe house that opens for the last 20 seconds",
+    "Give zombies a sprint they can use every 10 seconds",
+    "Make it a snowy ski resort with yetis instead of zombies"
+  ]
+}

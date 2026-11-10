@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Outbreak IO</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #07090f; }
+  body { font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #eef2f8; user-select: none; -webkit-user-select: none; }
+  #game { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; }
+  [hidden] { display: none !important; }
+  .hud { position: fixed; pointer-events: none; text-shadow: 0 2px 4px #000d; }
+  #round { top: max(10px, env(safe-area-inset-top)); left: 0; right: 0; text-align: center; font-weight: 800; font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  #round small { display: block; margin-top: 3px; font-size: 13px; letter-spacing: 2px; color: #ffcf8a; }
+  #round small.one { color: #ff6b6b; }
+  #role { top: calc(max(10px, env(safe-area-inset-top)) + 58px); left: 50%; transform: translateX(-50%); padding: 3px 14px; border-radius: 999px; font-size: 13px; font-weight: 800; letter-spacing: 1px; white-space: nowrap; text-shadow: none; }
+  #role.human { background: #ffb347; color: #2b1700; } #role.zombie { background: #6fd36f; color: #0d2a10; } #role:empty { display: none; }
+  #big { inset: 0; display: grid; place-items: center; text-align: center; font-weight: 900; font-size: min(11vw, 76px); line-height: 1; padding: 0 16px; }
+  #big small { display: block; font-size: min(4.4vw, 20px); font-weight: 700; margin-top: 12px; color: #ffe3c4; }
+  #big .z { color: #8ef08a; } #big .r { color: #ff5d5d; }
+  #msg { left: 16px; right: 16px; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 28px); text-align: center; font-size: 15px; font-weight: 600; }
+  #net { bottom: max(10px, env(safe-area-inset-bottom)); left: max(14px, env(safe-area-inset-left)); font-size: 12px; opacity: .8; }
+  #slot { right: max(14px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 8px; padding: 4px 12px 4px 4px; border-radius: 12px; background: #000a; border: 1px solid #ffffff2a; font-size: 13px; font-weight: 700; text-shadow: none; }
+  #slot canvas { width: 36px; height: 36px; } #slot b { color: #ffcf8a; }
+  #over { position: fixed; inset: 0; display: grid; place-items: center; background: #05070dc8; }
+  .card { box-sizing: border-box; width: min(380px, calc(100vw - 32px)); max-height: 88vh; overflow: auto; padding: 20px; border-radius: 16px; background: #141a26; border: 1px solid #ffffff22; }
+  .card h2 { margin: 0 0 4px; font-size: 23px; color: #ffcf8a; }
+  .card h3 { margin: 14px 0 4px; font-size: 12px; color: #9fb0c8; letter-spacing: 1px; text-transform: uppercase; }
+  .card p { margin: 4px 0 0; font-size: 14px; opacity: .9; }
+  .card ol { margin: 0; padding-left: 24px; font-size: 14px; }
+  .card li { padding: 1px 0; } .card li span { float: right; font-variant-numeric: tabular-nums; opacity: .9; }
+  .card li.me { color: #ffcf8a; font-weight: 700; } .card li.z::marker { color: #6fd36f; }
+  button.go { margin-top: 16px; width: 100%; min-height: 48px; border: 0; border-radius: 12px; background: #ffb347; color: #2b1700; font: 800 17px system-ui, sans-serif; cursor: pointer; }
+  #stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: #ffffff18; border: 2px solid #ffffff66; pointer-events: none; }
+  #stick i { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: #ffffff99; }
+  .pad { position: fixed; right: max(18px, env(safe-area-inset-right)); width: 80px; height: 80px; padding: 0; border-radius: 50%; border: 2px solid #ffffff77; background: #ffffff1a;
+         color: #fff; font: 800 13px system-ui, sans-serif; touch-action: none; display: grid; place-items: center; }
+  #shove { bottom: max(18px, env(safe-area-inset-bottom)); background: #ff7a3d55; }
+  #use { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 94px); }
+  #use canvas { width: 46px; height: 46px; } .pad.wait { opacity: .4; }
+</style>
+<script src="https://cdn.multiplayeragent.com/sdk/mp.global.js"></script>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud" id="round"></div>
+<div class="hud" id="role"></div>
+<div class="hud" id="big"></div>
+<div class="hud" id="msg"></div>
+<div class="hud" id="net">Connecting…</div>
+<div class="hud" id="slot" hidden><canvas id="slotIcon" width="72" height="72"></canvas><span id="slotText"></span></div>
+<div id="stick" hidden><i></i></div>
+<button class="pad" id="use" hidden><canvas id="useIcon" width="92" height="92"></canvas><span id="useText">ITEM</span></button>
+<button class="pad" id="shove" hidden>SHOVE</button>
+<div id="over" hidden><div class="card">
+  <h2 id="overTitle"></h2><p id="overLine"></p>
+  <h3>This round</h3><ol id="results"></ol>
+  <h3>Best rounds</h3><ol id="board"><li>Loading…</li></ol>
+  <button class="go" id="again">Play again</button>
+  <p id="next"></p>
+</div></div>
+<script>
+/* ═══ OUTBREAK IO · a Multiplayer Agent starter ═══════════════════════════════════════
+ * One bite and you're one of them. Drop-in, 2–20 players; bots fill both sides.
+ *
+ * WHERE THINGS ARE (search for the "── " headers):
+ *   CONFIG ........ speeds, the shove, items, timers, points, and the town map (one string per row)
+ *   CONNECTION .... MP_CONNECT, joining, the offline room, who is host
+ *   TOWN .......... reading CONFIG.map: walls, doorways, item spots, graves; bumping into
+ *                   things; paths for bots
+ *   ROUND (HOST) .. brief → play → over: the first zombies, bites, the last survivor, the
+ *                   winner. Only the host writes these.
+ *   ITEMS (HOST) .. pickups, speed shoes, decoys, flashbangs, boards, shoves. Only the host
+ *                   writes these.
+ *   BOTS .......... bot zombies chase, bot survivors run, grab items and use them (the host
+ *                   runs them; in ?attract the same brain drives your own player)
+ *   ME ............ running, shoving, using items. Each player writes only its own.
+ *   OTHERS ........ other players and bots, drawn a moment in the past so they glide
+ *   DRAW .......... camera, the town, people, items, the dark, particles
+ *   HUD & RESULTS . timer, humans left, your role, hints, results card, leaderboard
+ *   INPUT & SOUND . keyboard, mouse, touch stick and buttons, WebAudio effects
+ *
+ * HOW THE MULTIPLAYER WORKS (a relay room: no server code):
+ *   - Each player writes its OWN entity: `p` (one packed JSON field: round id, position,
+ *     facing, moving) about 12 times a second, `hb` (heartbeat) once a second, and
+ *     `n`/`c` (name, color) once.
+ *   - The HOST is the lowest sessionId among live players (heartbeat seen in the last 3s),
+ *     worked out every frame. Only the host writes the shared fields:
+ *       `game`  round id, v, phase, timers, who is a zombie (who bit them and when), bites,
+ *               the last survivor, the winner
+ *       `world` items on the ground, what each survivor holds, decoys, barred doorways,
+ *               stuns and speed boosts, and the last few events (every client plays their
+ *               effects from here, so nobody misses one)
+ *       `bots`  every bot's position, ~10 times a second
+ *     A new host adopts all three and carries on: same round, same timers, same bots.
+ *   - Bites need no messages: the host compares everyone's latest position every frame.
+ *   - Intents to the host: "pick" (grab the item I'm on), "use" (use my item), "shove"
+ *     (push zombies near me back) and "again" (start the next round sooner). Each carries
+ *     the sender's position; the host checks it (a survivor? close enough?) and writes the
+ *     result into `world`. A shoved or flashed player reads its own stun from `world`.
+ *   - A new round starts only when the host bumps game.id; every client then puts its own
+ *     player on its start spot. Anyone who joins mid-round rises as a zombie in the graveyard.
+ *   - ?attract plays offline with bots only (the preview video is recorded from it).
+ *   - Leaderboard "best-round": your most points in one round, on the results card.
+ */
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────────────
+const CONFIG = {
+  seats: 10,             // bots fill the town up to this many people
+  zombieShare: 1 / 6,    // the first zombies are this share of everyone, rounded...
+  maxFirst: 2,           // ...at least 1 and at most this many
+  briefMs: 3500,         // survivors scatter while the first zombies climb out of their graves
+  roundMs: 80000,        // survivors win if anyone is still human after this
+  overMs: 9000,          // results before the next round
+  turnMs: 1100,          // a bitten survivor shakes this long, then moves as a zombie
+  speed: 165,            // survivor speed, px/s
+  zombieSpeed: 178,      // zombies are a little faster
+  botPace: { human: 0.94, zombie: 0.9 }, // bots run at this share of a player's speed
+  accel: 12,             // how quickly you reach full speed
+  radius: 14,            // how wide a person is, px
+  bite: 26,              // a zombie this close (centre to centre) turns a survivor
+  shoveReach: 72,        // zombies this close to a shove are pushed away...
+  shoveKnock: 460,       // ...this hard (px/s at first)...
+  shoveMs: 900,          // ...and stunned this long
+  shoveCooldown: 5000,   // ms between shoves
+  shoesMs: 5000, shoesBoost: 1.45,  // speed shoes: this much faster, this long
+  decoyMs: 7000, decoyLure: 380,    // a decoy shouts this long; bot zombies this close go for it
+  flashReach: 190, flashMs: 2600,   // a flashbang stuns every zombie this close, this long
+  boardsMs: 7000, boardsReach: 90,  // boards bar the nearest doorway (this close) to zombies, this long
+  lastBoost: 1.08,       // the last survivor runs this much faster
+  items: 6,              // items lying around town at once
+  itemEvery: 4500,       // ms between new items
+  itemReach: 26,         // walk this close to an item to pick it up (you carry one at a time)
+  itemOdds: { s: 3, f: 2.5, d: 2, b: 2.5 }, // how often each item shows up
+  points: { second: 1, bite: 10, survive: 25, last: 25 }, // each second human, each bite, human at the end, last one standing at the end
+  botFear: 240,          // a bot survivor runs from a zombie this close
+  dark: 0.86,            // how dark the night is (0 = day, 1 = pitch black)
+  tile: 40,              // px per map square
+  board: "best-round",   // leaderboard name
+  // The town, one string per row, every row the same length. Change it freely:
+  //   #  wall        =  floor indoors     D  doorway (boards bar it)     .  street       ,  grass
+  //   f  fence       o  tree      t  gravestone      b  bench      c  car      s  shelf
+  //   W  fountain    L  street lamp (lights the dark)      Z  grave (zombies rise here)
+  //   *  item spot outdoors      +  item spot indoors
+  map: [
+    "ffffffffffffffffffffffffffffffffffffffffffff",
+    "f,,o,,,,,,,o,..,,,,,,,,,,,,,,..,,,o,,,,,o,,f",
+    "f,##########,..,############,..,ffff,,ffff,f",
+    "f,#==+=====#,..,#====+=====#,..,fZ,,,,,,Zf,f",
+    "f,#====#===D,..,D==========D,..,f,t,t,t,,f,f",
+    "f,#====#===#,..,#==ss==ss==#,..,f,,,*,,,,f,f",
+    "f,#========#,..,#==========#,..,fZt,t,t,Zf,f",
+    "f,####D#####,..,#####DD#####,..,ffff,,ffff,f",
+    "f,,,,*,,,,,L,..,,*,,,,,,,,L,,..,,,,,,,,,L,,f",
+    "f....................*.....................f",
+    "f..........................................f",
+    "f,####D#####,..,,,,,,,,,,,,,,..,,,,,,,,,,,,f",
+    "f,#===+====#,..,o,,,,L,,,,,o,..,,#########,f",
+    "f,#========D,..,,,bb,,,,bb,,,..,,#==+====#,f",
+    "f,#===s====#,..,,,*,,WW,,,,,,..,,D=======#,f",
+    "f,###=######,..,,,,,,WW,,,*,,..,,#===s===#,f",
+    "f,#========#,..,,,bb,,,,bb,,,..,,#=======D,f",
+    "f,#####D####,..,o,,,,,L,,,,o,..,,#########,f",
+    "f,,o,,,,,,*,,..,,,,,,,,,,,,,,..,,,,*,,,,o,,f",
+    "f........*.................................f",
+    "f..........................................f",
+    "f..............,,,,,,,,,,,,,,..,,,,,,,,,,,,f",
+    "f.cc..cc..cc...,####DD######,..,#####,#####f",
+    "f..............,#====#=====#,..,#=+=#,#===#f",
+    "f...*....L.....,D====D==+==D,..,#===D,D===#f",
+    "f..............,#====#=====#,..,#===#,#=+=#f",
+    "f.cc..cc..cc...,#=+==#=====#,..,##D##,##D##f",
+    "f..............,############,..,,,,,,,,,,,,f",
+    "f,,,,o,,,,o,,..,,,o,,,,,,o,,,..,,o,,*,,,o,,f",
+    "ffffffffffffffffffffffffffffffffffffffffffff",
+  ],
+};
+const BOT_NAMES = ["Mia", "Gus", "Tess", "Rex", "Ivy", "Moe", "Lou", "Pia", "Ned", "Zoe", "Kai", "Bea", "Otis", "Wren", "Sal", "Dot"];
+const COLORS = ["#ff5d73", "#ffb347", "#ffe066", "#7ee081", "#4da3ff", "#b77dff", "#ff7ac8", "#3fd0c9", "#c0e45a", "#ff8f5a", "#8fb3ff", "#f4f1e8"];
+const ITEMS = {
+  s: { name: "Speed shoes", tip: "run faster for a few seconds" },
+  d: { name: "Decoy", tip: "drop a shouting dummy that zombies go for" },
+  f: { name: "Flashbang", tip: "stun every zombie near you" },
+  b: { name: "Boards", tip: "bar the nearest doorway to zombies" },
+};
+
+// ── CONNECTION ──────────────────────────────────────────────────────────────────────
+// The builder fills these in for this game. Downloaded from GitHub? Put your own pk_ key here.
+const MP_CONNECT = {
+  key: 'pk_REPLACE_ME',
+  room: 'outbreak-io',
+  endpoint: 'wss://live.multiplayeragent.com',
+  apiUrl: 'https://api.multiplayeragent.com',
+};
+const ATTRACT = new URLSearchParams(location.search).has("attract");
+if (ATTRACT) Object.assign(CONFIG, { seats: 12, briefMs: 600, roundMs: 30000, overMs: 2200, items: 8, itemEvery: 2000, dark: 0.55, botPace: { human: 0.93, zombie: 0.97 } });
+
+/** Same shape as the SDK client, kept in this tab: offline play and ?attract. */
+function localRoom() {
+  const id = "local", state = { entities: { players: { [id]: {} } }, shared: {} }, subs = [];
+  let queued = false;
+  const emit = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; subs.forEach((f) => f(state)); }); } };
+  const put = (o, k, v) => { if (typeof k === "object") Object.assign(o, k); else o[k] = v; emit(); };
+  return {
+    sessionId: id, state, offline: true,
+    me: { set: (k, v) => put(state.entities.players[id], k, v) },
+    setShared: (k, v) => put(state.shared, k, v),
+    onState: (f) => { subs.push(f); f(state); }, onJoin() {}, onLeave() {}, on() {}, send() {},
+    onDisconnect() {}, onReconnect() {}, leave: async () => {},
+  };
+}
+async function connect() {
+  if (ATTRACT || typeof MP === "undefined") return localRoom();
+  try {
+    const mp = await Promise.race([MP.join({ ...MP_CONNECT }), new Promise((_, no) => setTimeout(() => no(new Error("timed out")), 10000))]);
+    window.mp = mp; // the builder calls window.mp.leave() when the page closes
+    return mp;
+  } catch (e) {
+    console.warn("Playing offline:", e && e.message);
+    return localRoom();
+  }
+}
+const parse = (v, fb) => { if (typeof v !== "string") return fb; try { return JSON.parse(v); } catch { return fb; } };
+const memo = new Map();
+/** A shared JSON field, parsed once per change (read-only: never mutate what this returns). */
+function shared(key, fb) { const raw = S.shared[key], m = memo.get(key); if (m && m.raw === raw) return m.v; const v = parse(raw, fb); memo.set(key, { raw, v }); return v; }
+let net = null, S = { entities: { players: {} }, shared: {} };
+let hosting = false; // isHost(), worked out once per frame
+const seenHb = new Map();
+/** Players whose heartbeat moved in the last 3s (plus us), sorted by sessionId. */
+function livePlayers() {
+  const now = performance.now(), out = [];
+  for (const [id, p] of Object.entries(S.entities.players || {})) {
+    const s = seenHb.get(id);
+    if (!s || s.hb !== p.hb) seenHb.set(id, { hb: p.hb, at: now });
+    if (id === net.sessionId || now - seenHb.get(id).at < 3000) out.push(id);
+  }
+  return out.sort();
+}
+let frameAt = 0, wokeAt = -1e9; // my loop's last frame, and when it last woke from a stall (a frozen or background tab)
+/** Never while my own loop is stalled, nor for 0.7s after it wakes: the room moved on without me, so the newer state lands first. */
+const isHost = () => livePlayers()[0] === net.sessionId && performance.now() - frameAt < 1000 && performance.now() - wokeAt > 700;
+const isBot = (id) => id[0] === "@"; // bot ids look like "@3"; sessionIds never have an @
+
+// ── TOWN ────────────────────────────────────────────────────────────────────────────
+const T = CONFIG.tile, R = CONFIG.radius, MAP = CONFIG.map, GW = MAP[0].length, GH = MAP.length, WW = GW * T, WH = GH * T;
+const SOLID = "#fotbcsW";
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const ch = (cx, cy) => (cx < 0 || cy < 0 || cx >= GW || cy >= GH ? "#" : MAP[cy][cx] || "#");
+const centerOf = (k) => ({ x: ((k % GW) + 0.5) * T, y: (Math.floor(k / GW) + 0.5) * T });
+const cellAt = (x, y) => clamp(Math.floor(x / T), 0, GW - 1) + clamp(Math.floor(y / T), 0, GH - 1) * GW;
+function mulberry32(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const hashStr = (s) => [...String(s)].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7) >>> 0;
+
+// Doorways: touching D squares form one doorway, and boards bar all of it.
+const doorOf = new Int16Array(GW * GH).fill(-1), DOORS = [];
+for (let k = 0; k < GW * GH; k++) {
+  if (MAP[(k / GW) | 0][k % GW] !== "D" || doorOf[k] >= 0) continue;
+  const door = { id: DOORS.length, cells: [], x: 0, y: 0 }, todo = [k];
+  doorOf[k] = door.id;
+  while (todo.length) {
+    const c = todo.pop(), x = c % GW, y = (c / GW) | 0;
+    door.cells.push(c);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (ch(x + dx, y + dy) === "D" && doorOf[x + dx + (y + dy) * GW] < 0) { doorOf[x + dx + (y + dy) * GW] = door.id; todo.push(x + dx + (y + dy) * GW); }
+  }
+  const cs = door.cells.map(centerOf);
+  door.x = cs.reduce((s, c) => s + c.x, 0) / cs.length; door.y = cs.reduce((s, c) => s + c.y, 0) / cs.length;
+  DOORS.push(door);
+}
+const GRAVES = [], ITEM_SPOTS = [], LAMPS = [], WALKABLE = [];
+for (let k = 0; k < GW * GH; k++) {
+  const c = MAP[(k / GW) | 0][k % GW];
+  if (c === "Z") GRAVES.push(k);
+  if (c === "*" || c === "+") ITEM_SPOTS.push(k);
+  if (c === "L") LAMPS.push(centerOf(k));
+  if (!SOLID.includes(c)) WALKABLE.push(k);
+}
+if (!GRAVES.length) GRAVES.push(WALKABLE[0]);
+const graveMid = GRAVES.map(centerOf).reduce((s, c) => ({ x: s.x + c.x / GRAVES.length, y: s.y + c.y / GRAVES.length }), { x: 0, y: 0 });
+const OUTDOOR = WALKABLE.filter((k) => ",.*".includes(MAP[(k / GW) | 0][k % GW]));
+// Survivors start outdoors, well away from the graves.
+let SPAWNS = OUTDOOR.filter((k) => dist(centerOf(k), graveMid) > 14 * T);
+if (SPAWNS.length < 8) SPAWNS = OUTDOOR;
+
+/** Is this doorway barred right now? (the host clears it when the boards break) */
+function barred(door) { const w = world(); return door >= 0 && w.bar[door] !== undefined; }
+/** Can't walk into this square. Barred doorways stop zombies only. */
+function solid(cx, cy, zombie) { const c = ch(cx, cy); return SOLID.includes(c) || (zombie && c === "D" && barred(doorOf[cx + cy * GW])); }
+/** Push a body ({x, y}) out of every solid square it overlaps. */
+function pushOut(o, zombie) {
+  const x0 = Math.floor((o.x - R) / T), x1 = Math.floor((o.x + R) / T), y0 = Math.floor((o.y - R) / T), y1 = Math.floor((o.y + R) / T);
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+    if (!solid(cx, cy, zombie)) continue;
+    const l = cx * T, t = cy * T, nx = clamp(o.x, l, l + T), ny = clamp(o.y, t, t + T), dx = o.x - nx, dy = o.y - ny, d = Math.hypot(dx, dy);
+    if (d >= R) continue;
+    if (d > 1e-4) { o.x = nx + (dx / d) * R; o.y = ny + (dy / d) * R; continue; }
+    const pl = o.x - l, pr = l + T - o.x, pt = o.y - t, pb = t + T - o.y, m = Math.min(pl, pr, pt, pb); // inside: out the nearest side
+    if (m === pl) o.x = l - R; else if (m === pr) o.x = l + T + R; else if (m === pt) o.y = t - R; else o.y = t + T + R;
+  }
+}
+function moveBody(o, dx, dy, zombie) {
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / (R * 0.7)));
+  for (let i = 0; i < n; i++) { o.x += dx / n; pushOut(o, zombie); o.y += dy / n; pushOut(o, zombie); }
+  o.x = clamp(o.x, R, WW - R); o.y = clamp(o.y, R, WH - R);
+}
+const CORNERS = [[-R + 2, -R + 2], [R - 2, -R + 2], [-R + 2, R - 2], [R - 2, R - 2]];
+/** A body could walk the straight line from a to b without touching anything solid. */
+function clearLine(a, b, zombie) {
+  const n = Math.ceil(dist(a, b) / 9);
+  for (let i = 1; i <= n; i++) {
+    const x = a.x + ((b.x - a.x) * i) / n, y = a.y + ((b.y - a.y) * i) / n;
+    for (const [ox, oy] of CORNERS) if (solid(Math.floor((x + ox) / T), Math.floor((y + oy) / T), zombie)) return false;
+  }
+  return true;
+}
+const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+const prevBuf = new Int32Array(GW * GH), queue = new Int32Array(GW * GH);
+/** A walkable route from a to b as square centres (ending at b), or [] if there is none. */
+function route(a, b, zombie) {
+  const s = cellAt(a.x, a.y), goal = cellAt(b.x, b.y);
+  if (s === goal) return [{ x: b.x, y: b.y }];
+  prevBuf.fill(-1); prevBuf[s] = s;
+  let head = 0, tail = 0; queue[tail++] = s;
+  while (head < tail && prevBuf[goal] < 0) {
+    const k = queue[head++], x = k % GW, y = (k / GW) | 0;
+    for (const [dx, dy] of DIRS8) {
+      const nx = x + dx, ny = y + dy, n = nx + ny * GW;
+      if (nx < 0 || ny < 0 || nx >= GW || ny >= GH || prevBuf[n] >= 0 || solid(nx, ny, zombie)) continue;
+      if (dx && dy && (solid(x + dx, y, zombie) || solid(x, y + dy, zombie))) continue;
+      prevBuf[n] = k; queue[tail++] = n;
+    }
+  }
+  if (prevBuf[goal] < 0) return [];
+  const out = [{ x: b.x, y: b.y }];
+  for (let k = prevBuf[goal]; k !== s; k = prevBuf[k]) out.unshift(centerOf(k));
+  return out;
+}
+// How open each square is (walkable squares around it): fleeing bots prefer open ground to dead ends.
+const OPEN = new Uint8Array(GW * GH);
+for (let k = 0; k < GW * GH; k++) {
+  const x = k % GW, y = (k / GW) | 0;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (!solid(x + dx, y + dy, false)) OPEN[k]++;
+}
+/** The doorway nearest to p, if one is within reach. */
+function nearestDoor(p, reach) {
+  let best = null, bd = reach;
+  for (const d of DOORS) for (const k of d.cells) { const c = centerOf(k), dd = dist(c, p); if (dd <= bd) { bd = dd; best = d; } }
+  return best;
+}
+
+// ── ROUND (HOST) ────────────────────────────────────────────────────────────────────
+const host = { was: false, G: null, W: null, bots: new Map(), dirty: { game: false, world: false }, wrote: { game: 0, world: 0, bots: 0 }, shoveAt: new Map(), again: false };
+/** The round as state has it (the host reads its own working copy). Read-only. */
+function game() {
+  if (hosting && host.G) return host.G;
+  const g = shared("game", null);
+  return g && typeof g === "object" && g.pp ? g : null;
+}
+const NO_WORLD = { g: -1, items: [], dec: [], bar: {}, inv: {}, st: {}, spd: {}, ev: [] };
+/** Items, decoys, barred doors, stuns and recent events for this round. Read-only. */
+function world() {
+  if (hosting && host.W) return host.W;
+  const g = game(), w = shared("world", null);
+  return g && w && w.g === g.id ? w : NO_WORLD;
+}
+const freshWorld = (id, t) => ({ g: id, v: 0, items: [], dec: [], bar: {}, inv: {}, st: {}, spd: {}, ev: [], nid: 1, next: t + CONFIG.itemEvery });
+const mark = (what) => { host.dirty[what] = true; };
+/** Send whatever changed: at most ~10 writes a second per field (world goes first, so a new round's world is there before its game).
+ *  `v` never goes below what state already has, so a stale copy can't look newer. */
+function flush(now, force) {
+  if (host.dirty.world && (force || now - host.wrote.world > 100)) { host.W.v = Math.max(host.W.v, shared("world", null)?.v || 0) + 1; net.setShared("world", JSON.stringify(host.W)); host.dirty.world = false; host.wrote.world = now; }
+  if (host.dirty.game && (force || now - host.wrote.game > 100)) { host.G.v = Math.max(host.G.v, shared("game", null)?.v || 0) + 1; net.setShared("game", JSON.stringify(host.G)); host.dirty.game = false; host.wrote.game = now; }
+  if (now - host.wrote.bots > 100) { host.wrote.bots = now; net.setShared("bots", JSON.stringify(botList())); }
+}
+/** Become host: take over the round, the world and the bots exactly as state has them. */
+function adopt() {
+  host.was = true;
+  const g = shared("game", null), w = shared("world", null);
+  host.G = g && g.pp ? clone(g) : null;
+  host.W = host.G ? (w && w.g === host.G.id ? clone(w) : freshWorld(host.G.id, Date.now())) : null;
+  host.bots.clear();
+  for (const b of shared("bots", [])) host.bots.set(b[0], { ...newBody(), id: b[0], name: b[1], color: b[2], x: b[3], y: b[4], a: b[5] });
+}
+const isZombie = (G, id) => !!(G.pp[id] && G.pp[id][0]);
+const decis = (G, t) => Math.max(1, Math.round((t - G.startAt) / 100)); // when someone turned: tenths of a second into the round
+/** Bitten a moment ago: still shaking, can't move or bite yet. */
+const turningAt = (G, id, t) => { const e = G.pp[id]; return !!e && !!e[0] && e[1] > 0 && t < G.startAt + e[1] * 100 + CONFIG.turnMs; };
+const stunnedAt = (w, id, t) => !!w.st[id] && w.st[id][0] > t;
+
+/** G.pp[id] = [zombie 0/1, turned (tenths of a second into the round, 0 = from the start), bitten by, bites]. */
+function startRound(id) {
+  const t = Date.now(), humans = livePlayers().filter((h) => !(ATTRACT && h === net.sessionId)); // in ?attract your autopilot takes a bot's seat
+  syncBots(Math.max(0, CONFIG.seats - humans.length - (ATTRACT ? 1 : 0)));
+  const everyone = [...livePlayers(), ...host.bots.keys()], prev = host.G;
+  const wasFirst = new Set(prev ? Object.keys(prev.pp).filter((i) => prev.pp[i][0] && !prev.pp[i][1]) : []);
+  const shuffle = (list) => list.map((i) => [i, Math.random() + (wasFirst.has(i) ? 2 : 0)]).sort((a, b) => a[1] - b[1]).map((r) => r[0]);
+  const people_ = shuffle(livePlayers()), bots = shuffle([...host.bots.keys()]);
+  // The first zombies are bots, except every third round a person goes first (whoever didn't last time).
+  const n = clamp(Math.round(everyone.length * CONFIG.zombieShare), 1, CONFIG.maxFirst);
+  const first = [...new Set([...(id % 3 === 0 ? people_.slice(0, 1) : []), ...bots, ...people_])].slice(0, n);
+  const G = { id, v: prev ? prev.v : 0, phase: "brief", startAt: t + CONFIG.briefMs, endsAt: t + CONFIG.briefMs + CONFIG.roundMs, endedAt: 0, win: "", last: "", n0: everyone.length - first.length, pp: {} };
+  for (const i of everyone) G.pp[i] = [first.includes(i) ? 1 : 0, 0, "", 0];
+  const w = freshWorld(id, t);
+  w.v = host.W ? host.W.v : 0;
+  for (let i = 0; i < CONFIG.items; i++) spawnItem(w);
+  for (const b of host.bots.values()) Object.assign(b, newBody(), spawnFor(b.id, G));
+  host.G = G; host.W = w; host.again = false;
+  mark("world"); mark("game"); flush(performance.now(), true);
+}
+function syncBots(want) {
+  for (let i = 1; host.bots.size < want && i < 64; i++) if (!host.bots.has("@" + i)) {
+    const used = new Set([...host.bots.values()].map((b) => b.color).concat(livePlayers().map(colorOf)));
+    host.bots.set("@" + i, { ...newBody(), id: "@" + i, name: BOT_NAMES[(i - 1) % BOT_NAMES.length], color: COLORS.find((c) => !used.has(c)) || COLORS[i % COLORS.length] });
+  }
+  while (host.bots.size > want) host.bots.delete([...host.bots.keys()].pop());
+}
+/** Where someone starts a round: the first zombies (and anyone joining mid-round) in a grave, survivors around town. */
+function spawnFor(id, G) {
+  const e = G.pp[id], grave = e ? e[0] === 1 && !e[1] : G.phase === "play";
+  const r = mulberry32(hashStr(id) + G.id * 7919), list = grave ? GRAVES : SPAWNS, c = centerOf(list[Math.floor(r() * list.length)]);
+  return { x: c.x + (r() - 0.5) * 12, y: c.y + (r() - 0.5) * 12, a: grave ? Math.PI / 2 : r() * Math.PI * 2 };
+}
+
+function hostTick(dt, now) {
+  if (!host.was) adopt();
+  if (!host.G) startRound(1);
+  const G = host.G, w = host.W, t = Date.now();
+  if (G.phase !== "over") for (const id of livePlayers()) if (!G.pp[id]) { G.pp[id] = [G.phase === "play" ? 1 : 0, 0, "", 0]; mark("game"); } // joined mid-round: a zombie
+  if (G.phase === "brief" && t >= G.startAt) { G.phase = "play"; mark("game"); }
+  botsTick(dt, now, G, w, t);
+  if (G.phase === "play") judge(G, w, t);
+  itemsTick(G, w, t);
+  if (G.phase === "over" && (t >= G.endsAt || host.again)) startRound(G.id + 1);
+  host.again = false;
+  flush(now, false);
+}
+/** Bites, popped decoys, the last survivor and the end of the round, all from everyone's latest position. */
+function judge(G, w, t) {
+  const all = people(G).filter((c) => G.pp[c.id]);
+  const zs = all.filter((c) => G.pp[c.id][0]), hs = all.filter((c) => !G.pp[c.id][0]);
+  for (const z of zs) {
+    if (stunnedAt(w, z.id, t) || turningAt(G, z.id, t)) continue;
+    for (const h of hs) if (!G.pp[h.id][0] && dist(z, h) < CONFIG.bite) bite(G, w, h, z, t);
+    for (let i = w.dec.length - 1; i >= 0; i--) { const d = w.dec[i]; if (Math.hypot(d[1] - z.x, d[2] - z.y) < CONFIG.bite + 8) { w.dec.splice(i, 1); pushEv(w, "pop", d[1], d[2]); } }
+  }
+  const left = hs.filter((h) => !G.pp[h.id][0]);
+  if (!zs.length && left.length > 1) { // every zombie left the room: a survivor (a bot if there is one) turns
+    const pick = left.find((c) => c.bot) || left[0];
+    G.pp[pick.id] = [1, decis(G, t), "", G.pp[pick.id][3]]; pushEv(w, "rise", pick.x, pick.y, pick.id); mark("game");
+    return;
+  }
+  if (left.length === 1 && !G.last && G.n0 > 1) { G.last = left[0].id; mark("game"); }
+  if (!left.length) endRound(G, "zombies", t);
+  else if (t >= G.endsAt) endRound(G, "humans", t);
+}
+function bite(G, w, h, z, t) {
+  G.pp[h.id] = [1, decis(G, t), z.id, G.pp[h.id][3]];
+  G.pp[z.id][3]++;
+  delete w.inv[h.id]; delete w.spd[h.id];
+  pushEv(w, "bite", h.x, h.y, h.id, z.id);
+  mark("game");
+}
+function endRound(G, win, t) { Object.assign(G, { phase: "over", win, endedAt: t, endsAt: t + CONFIG.overMs }); mark("game"); }
+/** One person's round: time survived, bites, points. */
+function scoreOf(G, id) {
+  const e = G.pp[id] || [1, 0, "", 0], human = !e[0], P = CONFIG.points;
+  const ms = human ? clamp((G.endedAt || Date.now()) - G.startAt, 0, CONFIG.roundMs) : e[1] * 100;
+  const won = human && G.win === "humans";
+  return { ms, bites: e[3], human, pts: Math.floor(ms / 1000) * P.second + e[3] * P.bite + (won ? P.survive : 0) + (won && G.last === id ? P.last : 0) };
+}
+
+// ── ITEMS (HOST) ────────────────────────────────────────────────────────────────────
+// world.items = [[id, kind, x, y]], world.inv = {who: kind}, world.dec = [[id, x, y, until]],
+// world.bar = {doorway: until}, world.st = {who: [until, ms, knockX, knockY]}, world.spd = {who: [until, ms]},
+// world.ev = [[id, kind, x, y, who, more]] (the last 10 events).
+function pushEv(w, kind, x, y, a = "", b = "") { w.ev.push([w.nid++, kind, Math.round(x), Math.round(y), a, b]); if (w.ev.length > 10) w.ev.shift(); mark("world"); }
+function spawnItem(w) {
+  const used = new Set(w.items.map((it) => cellAt(it[2], it[3]))), free = ITEM_SPOTS.filter((k) => !used.has(k));
+  if (!free.length) return;
+  const c = centerOf(free[Math.floor(Math.random() * free.length)]), odds = Object.entries(CONFIG.itemOdds);
+  let roll = Math.random() * odds.reduce((s, [, n]) => s + n, 0), kind = odds[0][0];
+  for (const [k, n] of odds) { roll -= n; if (roll <= 0) { kind = k; break; } }
+  w.items.push([w.nid++, kind, Math.round(c.x), Math.round(c.y)]);
+}
+/** Where the host believes `id` is: the position it sent with an intent if that's near its latest update (intents can arrive first). */
+function trusted(id, sent) {
+  const known = whereIs(id);
+  if (!known) return null;
+  return sent && typeof sent.x === "number" && typeof sent.y === "number" && dist(sent, known) < 140 ? { x: sent.x, y: sent.y } : { x: known.x, y: known.y };
+}
+function whereIs(id) {
+  if (id === net.sessionId) return me;
+  if (isBot(id)) return host.bots.get(id) || null;
+  const p = S.entities.players[id], q = p && posOf(id, p);
+  return q || null;
+}
+function applyPick(id, itemId, sent) {
+  const G = host.G, w = host.W, e = G.pp[id], at = trusted(id, sent), k = w.items.findIndex((it) => it[0] === itemId);
+  if (!e || e[0] || w.inv[id] || G.phase === "over" || !at || k < 0) return;
+  const it = w.items[k];
+  if (Math.hypot(it[2] - at.x, it[3] - at.y) > CONFIG.itemReach + 40) return;
+  w.items.splice(k, 1); w.inv[id] = it[1];
+  pushEv(w, "pick", it[2], it[3], id, it[1]);
+}
+function applyUse(id, sent) {
+  const G = host.G, w = host.W, e = G.pp[id], kind = w.inv[id], t = Date.now(), at = trusted(id, sent);
+  if (!e || e[0] || !kind || !at || G.phase === "over") return;
+  if (kind === "s") { w.spd[id] = [t + CONFIG.shoesMs, CONFIG.shoesMs]; pushEv(w, "shoes", at.x, at.y, id); }
+  if (kind === "d") { w.dec.push([w.nid++, Math.round(at.x), Math.round(at.y), t + CONFIG.decoyMs]); pushEv(w, "decoy", at.x, at.y, id); }
+  if (kind === "f") {
+    for (const c of people(G)) if (isZombie(G, c.id) && dist(c, at) < CONFIG.flashReach) w.st[c.id] = [t + CONFIG.flashMs, CONFIG.flashMs, 0, 0];
+    pushEv(w, "flash", at.x, at.y, id);
+  }
+  if (kind === "b") {
+    const door = nearestDoor(at, CONFIG.boardsReach + 30);
+    if (!door) return; // nothing to board up: keep them
+    w.bar[door.id] = t + CONFIG.boardsMs; pushEv(w, "boards", door.x, door.y, id);
+  }
+  delete w.inv[id]; mark("world");
+}
+function applyShove(id, sent) {
+  const G = host.G, w = host.W, e = G.pp[id], t = Date.now(), at = trusted(id, sent);
+  if (!e || e[0] || !at || G.phase !== "play" || t - (host.shoveAt.get(id) || 0) < CONFIG.shoveCooldown - 400) return;
+  host.shoveAt.set(id, t);
+  for (const c of people(G)) {
+    const dx = c.x - at.x, dy = c.y - at.y, d = Math.hypot(dx, dy);
+    if (!isZombie(G, c.id) || d > CONFIG.shoveReach) continue;
+    const kx = d > 1 ? dx / d : 1, ky = d > 1 ? dy / d : 0;
+    w.st[c.id] = [t + CONFIG.shoveMs, CONFIG.shoveMs, Math.round(kx * CONFIG.shoveKnock), Math.round(ky * CONFIG.shoveKnock)];
+    const b = host.bots.get(c.id);
+    if (b) { b.vx = kx * CONFIG.shoveKnock; b.vy = ky * CONFIG.shoveKnock; }
+  }
+  pushEv(w, "shove", at.x, at.y, id);
+}
+/** Stuns, boosts, boards and decoys run out; new items turn up. */
+function itemsTick(G, w, t) {
+  for (const [id, s] of Object.entries(w.st)) if (s[0] < t) { delete w.st[id]; mark("world"); }
+  for (const [id, s] of Object.entries(w.spd)) if (s[0] < t) { delete w.spd[id]; mark("world"); }
+  for (const [d, until] of Object.entries(w.bar)) if (until < t) { delete w.bar[d]; const D = DOORS[d]; if (D) pushEv(w, "unbar", D.x, D.y); }
+  for (const d of w.dec.filter((d) => d[3] < t)) { w.dec.splice(w.dec.indexOf(d), 1); pushEv(w, "pop", d[1], d[2]); }
+  if (G.phase !== "over" && w.items.length < CONFIG.items && t >= w.next) { spawnItem(w); w.next = t + CONFIG.itemEvery; mark("world"); }
+}
+
+// ── BOTS ────────────────────────────────────────────────────────────────────────────
+// One brain for every bot (and, in ?attract, your own player): pick a goal a few times a
+// second, then steer along a path to it every frame. Plausible, not perfect.
+const STILL = { mx: 0, my: 0 };
+const newBody = () => ({ x: 0, y: 0, a: 0, vx: 0, vy: 0, m: 0, path: [], goal: null, think: 0, wander: 0, chase: "", nextShove: 0, stuckAt: 0, sx: 0, sy: 0 });
+function botList() { return [...host.bots.values()].map((b) => [b.id, b.name, b.color, Math.round(b.x), Math.round(b.y), +b.a.toFixed(2), b.m]); }
+function speedOf(id, G, w, t) {
+  if (isZombie(G, id)) return CONFIG.zombieSpeed;
+  return CONFIG.speed * (w.spd[id] && w.spd[id][0] > t ? CONFIG.shoesBoost : 1) * (G.last === id && G.phase === "play" ? CONFIG.lastBoost : 1);
+}
+function botsTick(dt, now, G, w, t) {
+  const all = people(G);
+  for (const b of host.bots.values()) {
+    const z = isZombie(G, b.id), stun = stunnedAt(w, b.id, t);
+    const held = !G.pp[b.id] || (z && G.phase === "brief") || turningAt(G, b.id, t);
+    const inp = held || stun ? STILL : botInput(b, G, w, all, now, t, z);
+    stepBody(b, inp, dt, speedOf(b.id, G, w, t) * (z ? CONFIG.botPace.zombie : CONFIG.botPace.human), z, stun);
+    if (!z && G.pp[b.id] && !w.inv[b.id] && G.phase !== "over") {
+      const it = w.items.find((it) => Math.hypot(it[2] - b.x, it[3] - b.y) < CONFIG.itemReach);
+      if (it) applyPick(b.id, it[0], b);
+    }
+  }
+}
+function botInput(b, G, w, all, now, t, zombie) {
+  if (now > b.think) { b.think = now + (zombie ? 320 : 220) + Math.random() * 260; (zombie ? thinkZombie : thinkHuman)(b, G, w, all, now, t); }
+  if (now > b.stuckAt) { // barely moved for a second while trying: try somewhere else
+    if (b.goal && Math.hypot(b.x - b.sx, b.y - b.sy) < 12) { b.chase = ""; wander(b, zombie, now, true); }
+    b.stuckAt = now + 1000; b.sx = b.x; b.sy = b.y;
+  }
+  let goal = b.goal;
+  const prey = b.chase && all.find((c) => c.id === b.chase);
+  if (prey && dist(b, prey) < 110 && clearLine(b, prey, zombie)) { goal = prey; b.path = []; } // close: straight at them
+  if (!goal) return STILL;
+  while (b.path.length > 1 && clearLine(b, b.path[1], zombie)) b.path.shift();
+  if (b.path.length > 1 && dist(b, b.path[0]) < 10) b.path.shift();
+  const p = b.path[0] || goal, dx = p.x - b.x, dy = p.y - b.y, d = Math.hypot(dx, dy);
+  if (d < 6) { b.path.shift(); return STILL; }
+  return { mx: dx / d, my: dy / d };
+}
+function setGoal(b, goal, zombie) { b.goal = goal; b.path = goal && !clearLine(b, goal, zombie) ? route(b, goal, zombie) : []; }
+function wander(b, zombie, now, force) {
+  if (!force && b.goal && dist(b, b.goal) > 20 && now < b.wander) return;
+  b.wander = now + 3000 + Math.random() * 3000;
+  setGoal(b, centerOf(WALKABLE[Math.floor(Math.random() * WALKABLE.length)]), zombie);
+}
+/** A zombie bot goes for the survivor it can reach soonest (people a little sooner), or a shouting decoy. */
+function thinkZombie(b, G, w, all, now) {
+  const hunters = [...host.bots.values()].filter((o) => o !== b && isZombie(G, o.id)).map((o) => o.chase);
+  let best = null, bs = 1e9;
+  for (const c of all) {
+    if (c.id === b.id || !G.pp[c.id] || isZombie(G, c.id)) continue;
+    const s = dist(b, c) + (hunters.includes(c.id) ? 80 : 0) - (c.id === b.chase ? 70 : 0) - (c.bot ? 0 : 30) + (clearLine(b, c, true) ? 0 : 140);
+    if (s < bs) { bs = s; best = c; }
+  }
+  b.chase = "";
+  for (const d of w.dec) { const dd = Math.hypot(d[1] - b.x, d[2] - b.y); if (dd < CONFIG.decoyLure && dd < bs) { setGoal(b, { x: d[1], y: d[2] }, true); return; } }
+  if (!best) { wander(b, true, now); return; }
+  b.chase = best.id; setGoal(b, { x: best.x, y: best.y }, true);
+}
+/** A survivor bot uses its item when it helps, shoves zombies that get close, runs, or goes for an item. */
+function thinkHuman(b, G, w, all, now, t) {
+  const zs = all.filter((c) => c.id !== b.id && isZombie(G, c.id) && !stunnedAt(w, c.id, t) && !turningAt(G, c.id, t));
+  let near = null, dn = 1e9;
+  for (const z of zs) { const d = dist(z, b); if (d < dn) { dn = d; near = z; } }
+  const held = w.inv[b.id], playing = G.phase === "play";
+  if (held && playing) {
+    const crowd = zs.filter((z) => dist(z, b) < CONFIG.flashReach * 0.8).length;
+    if ((held === "s" && dn < 170) || (held === "f" && (dn < 100 || crowd >= 2)) || (held === "d" && dn < 200) || (held === "b" && dn < 280 && nearestDoor(b, CONFIG.boardsReach * 0.8))) applyUse(b.id, b);
+  }
+  if (near && playing && dn < 58 && t >= b.nextShove && Math.random() < 0.7) { b.nextShove = t + CONFIG.shoveCooldown; applyShove(b.id, b); }
+  b.chase = "";
+  if (near && dn < CONFIG.botFear && (dn < 140 || clearLine(b, near, false))) { flee(b, zs); return; }
+  if (!w.inv[b.id] && G.pp[b.id]) {
+    let it = null, bi = 520;
+    for (const i of w.items) { const d = Math.hypot(i[2] - b.x, i[3] - b.y); if (d < bi) { bi = d; it = i; } }
+    if (it) { setGoal(b, { x: it[2], y: it[3] }, false); return; }
+  }
+  wander(b, false, now);
+}
+/** Run to the reachable spot nearby that keeps the most room from every zombie (open ground over dead ends). */
+function flee(b, zs) {
+  let best = null, bestScore = -1e9;
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 12) * Math.PI * 2 + Math.random() * 0.25, r = k < 12 ? 210 : 110, p = { x: b.x + Math.cos(a) * r, y: b.y + Math.sin(a) * r };
+    if (p.x < T || p.y < T || p.x > WW - T || p.y > WH - T) continue;
+    const c = cellAt(p.x, p.y);
+    if (solid(c % GW, (c / GW) | 0, false) || !clearLine(b, p, false)) continue;
+    const score = Math.min(...zs.map((z) => dist(z, p))) + OPEN[c] * 5 + Math.random() * 30;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  if (best) setGoal(b, best, false);
+}
+/** One movement step (yours or a bot's): input mx/my in -1..1. A stunned body only slides. */
+function stepBody(b, inp, dt, speed, zombie, stunned) {
+  let { mx, my } = inp; const len = Math.hypot(mx, my);
+  if (len > 1) { mx /= len; my /= len; }
+  const k = Math.min(1, (stunned ? 5 : CONFIG.accel) * dt);
+  b.vx += ((stunned ? 0 : mx * speed) - b.vx) * k; b.vy += ((stunned ? 0 : my * speed) - b.vy) * k;
+  moveBody(b, b.vx * dt, b.vy * dt, zombie);
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > 25 && !stunned) b.a += angDiff(Math.atan2(b.vy, b.vx), b.a) * Math.min(1, dt * 12);
+  b.m = sp > 30 ? 1 : 0;
+}
+
+// ── ME ──────────────────────────────────────────────────────────────────────────────
+const FRIENDLY = ["Brave", "Quick", "Lucky", "Sneaky", "Jumpy", "Calm"], CRITTERS = ["Otter", "Fox", "Raccoon", "Badger", "Moth", "Crow"];
+const myName = (() => { try { return localStorage.getItem("mpa-name") || ""; } catch { return ""; } })() || FRIENDLY[Math.floor(Math.random() * 6)] + " " + CRITTERS[Math.floor(Math.random() * 6)];
+let myColor = COLORS[0]; // picked on join: the first color nobody in the room has
+const me = { ...newBody(), id: "", g: -1, z: false, turnUntil: 0, stunUntil: 0, stKey: 0, spdUntil: 0, spdKey: 0, shoveReady: 0, shoveAnim: -1e9, useWait: 0, picking: new Map(), lastSend: 0, playAt: 0 };
+const nameOf = (id) => (id === net.sessionId ? myName : isBot(id) ? host.bots.get(id)?.name || botsNow().find((b) => b.id === id)?.name || "Bot" : S.entities.players[id]?.n || "Someone");
+const colorOf = (id) => (id === net.sessionId ? myColor : isBot(id) ? host.bots.get(id)?.color || "#ccc" : S.entities.players[id]?.c || "#ccc");
+
+function myTick(dt, now, G, w) {
+  const id = net.sessionId, t = Date.now();
+  if (me.g !== G.id) startMyRound(G);
+  const e = G.pp[id], z = !!(e && e[0]);
+  if (z && !me.z && e[1] > 0) me.turnUntil = now + CONFIG.turnMs; // bitten: shake, then rise
+  me.z = z;
+  const st = w.st[id];
+  if (st && st[0] !== me.stKey) { me.stKey = st[0]; me.stunUntil = now + st[1]; me.vx = st[2]; me.vy = st[3]; } // shoved or flashed
+  const sp = w.spd[id];
+  if (sp && sp[0] !== me.spdKey) { me.spdKey = sp[0]; me.spdUntil = now + sp[1]; }
+  const held = (z && G.phase === "brief") || now < me.turnUntil, stun = now < me.stunUntil;
+  const inp = held || stun ? STILL : ATTRACT ? botInput(me, G, w, people(G), now, t, z) : readInput();
+  let speed = z ? CONFIG.zombieSpeed : CONFIG.speed;
+  if (!z && now < me.spdUntil) speed *= CONFIG.shoesBoost;
+  if (!z && G.last === id && G.phase === "play") speed *= CONFIG.lastBoost;
+  if (ATTRACT) speed *= z ? CONFIG.botPace.zombie : CONFIG.botPace.human;
+  stepBody(me, inp, dt, speed, z, stun);
+  if (!z && e && !w.inv[id] && G.phase !== "over") for (const it of w.items) { // walk over an item to grab it
+    if (Math.hypot(it[2] - me.x, it[3] - me.y) > CONFIG.itemReach || now - (me.picking.get(it[0]) ?? -1e9) < 500) continue;
+    me.picking.set(it[0], now);
+    if (hosting) applyPick(id, it[0], me); else net.send("pick", { i: it[0], x: Math.round(me.x), y: Math.round(me.y) });
+    break;
+  }
+  if (now - me.lastSend > 80) { // ~12/s
+    me.lastSend = now;
+    net.me.set("p", JSON.stringify({ g: G.id, x: Math.round(me.x), y: Math.round(me.y), a: +me.a.toFixed(2), m: me.m }));
+  }
+}
+function startMyRound(G) {
+  me.g = G.id;
+  Object.assign(me, newBody(), spawnFor(net.sessionId, G));
+  Object.assign(me, { z: isZombie(G, net.sessionId), turnUntil: 0, stunUntil: 0, spdUntil: 0, shoveReady: 0, playAt: 0 });
+  me.picking.clear();
+  $("over").hidden = true;
+}
+function tryShove() {
+  const G = game(), now = performance.now();
+  if (!G || G.phase !== "play" || !G.pp[net.sessionId] || isZombie(G, net.sessionId) || now < me.shoveReady || now < me.stunUntil) return;
+  me.shoveReady = now + CONFIG.shoveCooldown; me.shoveAnim = now;
+  if (hosting) applyShove(net.sessionId, me); else net.send("shove", { x: Math.round(me.x), y: Math.round(me.y) });
+  sound("shove");
+}
+function tryUse() {
+  const G = game(), w = world(), now = performance.now(), held = w.inv[net.sessionId];
+  if (!G || G.phase === "over" || isZombie(G, net.sessionId) || now < me.useWait) return;
+  if (!held) { toast("Walk over a glowing item to pick it up"); return; }
+  if (held === "b" && !nearestDoor(me, CONFIG.boardsReach)) { toast("Stand in or next to a doorway to board it up"); return; }
+  me.useWait = now + 500; // one press, one use: the host empties your hands
+  if (hosting) applyUse(net.sessionId, me); else net.send("use", { x: Math.round(me.x), y: Math.round(me.y) });
+}
+
+// ── OTHERS ──────────────────────────────────────────────────────────────────────────
+const posCache = new Map();
+/** Another player's packed `p` field, parsed once per change. */
+function posOf(id, p) { let c = posCache.get(id); if (!c || c.raw !== p.p) { c = { raw: p.p, v: parse(p.p, null) }; posCache.set(id, c); } return c.v; }
+let botMemo = { raw: null, list: [] };
+/** The bots: the host's live ones, or (everyone else) the latest snapshot. */
+function botsNow() {
+  if (hosting) return [...host.bots.values()];
+  const raw = S.shared.bots;
+  if (botMemo.raw !== raw) botMemo = { raw, list: parse(raw, []).map((b) => ({ id: b[0], name: b[1], color: b[2], x: b[3], y: b[4], a: b[5], m: b[6] })) };
+  return botMemo.list;
+}
+/** Everyone in this round at their latest known spot: { id, x, y, a, m, bot, mine }. */
+function people(G) {
+  const out = [], live = new Set(livePlayers());
+  for (const [id, p] of Object.entries(S.entities.players || {})) {
+    if (id === net.sessionId) { out.push({ id, x: me.x, y: me.y, a: me.a, m: me.m, mine: true }); continue; }
+    const q = posOf(id, p);
+    if (live.has(id) && q && q.g === G.id) out.push({ id, x: q.x, y: q.y, a: q.a, m: q.m });
+  }
+  for (const b of botsNow()) out.push({ id: b.id, x: b.x, y: b.y, a: b.a, m: b.m, bot: true });
+  return out;
+}
+function humansLeft(G) { const here = new Set(people(G).map((c) => c.id)); return Object.keys(G.pp).filter((i) => !G.pp[i][0] && here.has(i)); }
+// Other players and (on non-hosts) bots arrive ~10–12 times a second. Draw them LAG ms in the past,
+// between the two updates around that moment, so they glide instead of stepping.
+const LAG = 130, tracks = new Map();
+function feed(id, raw, s, now) {
+  let tr = tracks.get(id);
+  if (!tr) { tr = { raw: null, buf: [] }; tracks.set(id, tr); }
+  tr.seen = now;
+  if (tr.raw === raw) return tr;
+  tr.raw = raw;
+  const last = tr.buf[tr.buf.length - 1];
+  if (last && Math.hypot(last.x - s.x, last.y - s.y) > 200) tr.buf.length = 0; // a jump (a new round): no sliding across town
+  if (!last || last.x !== s.x || last.y !== s.y || last.a !== s.a || last.m !== s.m) tr.buf.push({ at: now, x: s.x, y: s.y, a: s.a || 0, m: s.m || 0 });
+  if (tr.buf.length > 10) tr.buf.shift();
+  return tr;
+}
+function sample(tr, now) {
+  const b = tr.buf, t = now - LAG;
+  if (b.length === 1 || t <= b[0].at) return b[0];
+  for (let i = b.length - 1; i > 0; i--) {
+    if (b[i - 1].at > t) continue;
+    const p = b[i - 1], q = b[i];
+    if (t >= q.at) return { ...q, m: now - q.at < 300 ? q.m : 0 };
+    const k = (t - p.at) / Math.max(1, q.at - p.at);
+    return { x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k, a: p.a + angDiff(q.a, p.a) * k, m: q.m };
+  }
+  return b[b.length - 1];
+}
+/** Seconds into a bite's "turning" shake (0..1), or -1. */
+function turnOf(G, id, t) { const e = G.pp[id]; if (!e || !e[0] || !e[1]) return -1; const k = (t - G.startAt - e[1] * 100) / CONFIG.turnMs; return k >= 0 && k < 1 ? k : -1; }
+/** Everyone to draw this frame, smoothed: people, bots and me. */
+function drawList(G, w, now) {
+  const out = [], live = new Set(livePlayers()), t = Date.now(), lastOn = G.phase === "play" ? G.last : "";
+  const add = (id, s, name, color, bot) => out.push({ id, x: s.x, y: s.y, a: s.a || 0, m: s.m, name, color, bot, z: isZombie(G, id), turn: turnOf(G, id, t), stun: !!w.st[id], last: lastOn === id, shove: shoveAnim.get(id) || -1e9 });
+  for (const [id, p] of Object.entries(S.entities.players || {})) {
+    if (id === net.sessionId || !live.has(id)) continue;
+    const q = posOf(id, p);
+    if (q && q.g === G.id) add(id, sample(feed(id, p.p, q, now), now), p.n || "Player", p.c || "#ccc", false);
+  }
+  const raw = S.shared.bots;
+  for (const b of botsNow()) add(b.id, hosting ? b : sample(feed(b.id, raw, b, now), now), b.name, b.color, true);
+  out.push({ id: net.sessionId, x: me.x, y: me.y, a: me.a, m: me.m, name: myName, color: myColor, mine: true, z: me.z, turn: now < me.turnUntil ? 1 - (me.turnUntil - now) / CONFIG.turnMs : -1,
+    stun: now < me.stunUntil, last: lastOn === net.sessionId, shove: me.shoveAnim });
+  for (const [id, tr] of tracks) if (now - tr.seen > 2000) tracks.delete(id);
+  return out;
+}
+
+// ── DRAW ────────────────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const cv = $("game"), ctx = cv.getContext("2d");
+const dk = document.createElement("canvas"), dctx = dk.getContext("2d"); // the dark, at half resolution
+let VW = 0, VH = 0, DPR = 1;
+function fit() { DPR = Math.min(2, devicePixelRatio || 1); VW = innerWidth; VH = innerHeight; cv.width = Math.round(VW * DPR); cv.height = Math.round(VH * DPR); dk.width = Math.ceil(VW / 2); dk.height = Math.ceil(VH / 2); }
+addEventListener("resize", fit); addEventListener("orientationchange", fit); fit();
+const baseZoom = () => (Math.sqrt(VW * VH) / 820) * (ATTRACT ? 1.8 : 1);
+const cam = { x: WW / 2, y: WH / 2, z: baseZoom(), shake: 0, fx: 0, fy: 0, pickAt: 0 };
+const SKIN = "#f0c39b", ZSKIN = "#8dc46e", HAIR = ["#3b2416", "#1d1d24", "#a8692f", "#6b3a1d"];
+const mixCache = new Map();
+/** Blend two #rrggbb colors (k = 0 → a, 1 → b). */
+function mix(a, b, k) {
+  const key = a + b + Math.round(k * 20);
+  if (mixCache.has(key)) return mixCache.get(key);
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16), q = Math.round(k * 20) / 20;
+  const c = [16, 8, 0].map((s) => Math.round(((pa >> s) & 255) * (1 - q) + ((pb >> s) & 255) * q));
+  const out = `rgb(${c[0]},${c[1]},${c[2]})`;
+  mixCache.set(key, out);
+  return out;
+}
+
+// The town is painted once into a big canvas and copied in every frame.
+const MS = clamp(Math.round(DPR * baseZoom() * 2) / 2, 1, 2);
+const mapCanvas = paintTown();
+function groundOf(cx, cy) {
+  const c = ch(cx, cy);
+  if (",.=".includes(c)) return c;
+  if (c === "D" || c === "+" || c === "s") return "=";
+  if (c === "c") return ".";
+  const n = { ",": 0, ".": 0, "=": 0 };
+  for (const [dx, dy] of DIRS8) { const d = ch(cx + dx, cy + dy); if (d in n) n[d]++; else if (d === "D") n["="]++; }
+  return Object.entries(n).sort((a, b) => b[1] - a[1])[0][1] ? Object.entries(n).sort((a, b) => b[1] - a[1])[0][0] : ",";
+}
+function paintTown() {
+  const c = document.createElement("canvas"); c.width = WW * MS; c.height = WH * MS;
+  const g = c.getContext("2d"), rnd = mulberry32(7);
+  g.scale(MS, MS);
+  const rect = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  const speck = (x, y, n, cols) => { for (let i = 0; i < n; i++) rect(x + rnd() * T, y + rnd() * T, 2, 2, cols[(rnd() * cols.length) | 0]); };
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) { // ground
+    const x = cx * T, y = cy * T, gr = groundOf(cx, cy);
+    if (gr === ",") { rect(x, y, T, T, "#17281e"); speck(x, y, 14, ["#1e3527", "#122019", "#22402c"]); }
+    if (gr === ".") { rect(x, y, T, T, "#22252e"); speck(x, y, 10, ["#2a2d37", "#1c1e25"]); }
+    if (gr === "=") { rect(x, y, T, T, "#3a2a20"); for (let k = 0; k < 4; k++) rect(x, y + k * 10, T, 1, "#2e2119"); rect(x + ((cx * 7 + cy * 3) % 4) * 10, y, 1, T, "#2e2119"); }
+  }
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) { // curbs and road lines
+    if (groundOf(cx, cy) !== ".") continue;
+    const x = cx * T, y = cy * T, road = (a, b) => groundOf(a, b) === ".";
+    if (groundOf(cx, cy - 1) === ",") rect(x, y, T, 3, "#3c414f");
+    if (groundOf(cx, cy + 1) === ",") rect(x, y + T - 3, T, 3, "#3c414f");
+    if (groundOf(cx - 1, cy) === ",") rect(x, y, 3, T, "#3c414f");
+    if (groundOf(cx + 1, cy) === ",") rect(x + T - 3, y, 3, T, "#3c414f");
+    if (road(cx, cy + 1) && !road(cx, cy - 1) && !road(cx, cy + 2) && cx % 2 === 0) rect(x + 8, y + T - 1.5, 24, 3, "#8a7a3a"); // a two-wide street: dashes in the middle
+    if (road(cx + 1, cy) && !road(cx - 1, cy) && !road(cx + 2, cy) && cy % 2 === 0) rect(x + T - 1.5, y + 8, 3, 24, "#8a7a3a");
+  }
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) { // wall shadows on the ground
+    if (ch(cx, cy) === "#" && ch(cx, cy + 1) !== "#") { const gr = g.createLinearGradient(0, (cy + 1) * T, 0, (cy + 1) * T + 14); gr.addColorStop(0, "#0009"); gr.addColorStop(1, "#0000"); g.fillStyle = gr; g.fillRect(cx * T, (cy + 1) * T, T, 14); }
+  }
+  const drawn = new Set();
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+    const k = cx + cy * GW, x = cx * T, y = cy * T, c = ch(cx, cy);
+    if (c === "#") { rect(x, y, T, T, "#3b4050"); rect(x + 3, y + 3, T - 6, T - 6, "#474d60"); if (ch(cx, cy + 1) !== "#") rect(x, y + T - 9, T, 9, "#2a2e3a"); }
+    if (c === "D") {
+      const across = ch(cx - 1, cy) === "#" || ch(cx + 1, cy) === "#" ? "x" : "y"; // the wall runs along x: people walk through along y
+      g.fillStyle = "#6b4a2e";
+      if (across === "x") { if (ch(cx - 1, cy) !== "D") g.fillRect(x, y + 4, 4, T - 8); if (ch(cx + 1, cy) !== "D") g.fillRect(x + T - 4, y + 4, 4, T - 8); g.fillStyle = "#4a3220"; g.fillRect(x, y + T / 2 - 2, T, 4); }
+      else { if (ch(cx, cy - 1) !== "D") g.fillRect(x + 4, y, T - 8, 4); if (ch(cx, cy + 1) !== "D") g.fillRect(x + 4, y + T - 4, T - 8, 4); g.fillStyle = "#4a3220"; g.fillRect(x + T / 2 - 2, y, 4, T); }
+    }
+    if (c === "f") {
+      g.fillStyle = "#5a3d26";
+      if (ch(cx + 1, cy) === "f") g.fillRect(x + T / 2, y + T / 2 - 2, T, 4);
+      if (ch(cx, cy + 1) === "f") g.fillRect(x + T / 2 - 2, y + T / 2, 4, T);
+      rect(x + T / 2 - 5, y + T / 2 - 5, 10, 10, "#7a5434");
+    }
+    if (c === "o") {
+      g.fillStyle = "#0007"; g.beginPath(); g.ellipse(x + 24, y + 26, 19, 15, 0, 0, 7); g.fill();
+      for (const [ox, oy, r, col] of [[20, 20, 19, "#1c4428"], [16, 17, 13, "#245a34"], [24, 15, 9, "#2c6a3e"], [13, 13, 5, "#357a48"]]) { g.fillStyle = col; g.beginPath(); g.arc(x + ox, y + oy, r, 0, 7); g.fill(); }
+    }
+    if (c === "t") {
+      rect(x + 10, y + 26, 20, 10, "#2a2018");
+      g.fillStyle = "#0006"; g.beginPath(); g.ellipse(x + 22, y + 25, 13, 8, 0, 0, 7); g.fill();
+      g.fillStyle = "#737a88"; g.beginPath(); g.moveTo(x + 9, y + 30); g.lineTo(x + 9, y + 12); g.arc(x + 20, y + 12, 11, Math.PI, 0); g.lineTo(x + 31, y + 30); g.closePath(); g.fill();
+      rect(x + 18.5, y + 8, 3, 14, "#565c69"); rect(x + 14, y + 12, 12, 3, "#565c69");
+    }
+    if (c === "Z") { rect(x + 8, y + 6, 24, 28, "#0b0907"); rect(x + 4, y + 8, 4, 26, "#3a2a1c"); rect(x + 32, y + 4, 6, 12, "#3a2a1c"); rect(x + 10, y + 34, 20, 4, "#2e2116"); }
+    if (c === "b") { g.fillStyle = "#0006"; g.fillRect(x + 6, y + 14, 30, 16); for (let i = 0; i < 3; i++) rect(x + 3, y + 10 + i * 6, 34, 4, "#7a5434"); rect(x + 5, y + 8, 3, 22, "#4a3220"); rect(x + 32, y + 8, 3, 22, "#4a3220"); }
+    if (c === "s") { rect(x + 2, y + 4, T - 4, T - 8, "#5a3e2a"); for (let i = 0; i < 6; i++) rect(x + 5 + (i % 3) * 11, y + 8 + ((i / 3) | 0) * 13, 8, 9, ["#c0504d", "#4f81bd", "#9bbb59", "#f2c14e"][(i + cx) % 4]); }
+    if (c === "c" && !drawn.has(k)) {
+      let n = 0; while (ch(cx + n, cy) === "c") { drawn.add(k + n); n++; }
+      const col = ["#7a2f35", "#2f4f7a", "#4f6a3a", "#5d5f6a", "#8a6a2a"][(cx + cy) % 5], w = n * T - 8;
+      g.fillStyle = "#0008"; g.beginPath(); g.roundRect(x + 7, y + 9, w, T - 12, 9); g.fill();
+      g.fillStyle = col; g.beginPath(); g.roundRect(x + 4, y + 5, w, T - 12, 9); g.fill();
+      g.fillStyle = "#00000044"; g.beginPath(); g.roundRect(x + 4 + w * 0.3, y + 8, w * 0.42, T - 18, 5); g.fill();
+      rect(x + 4 + w * 0.22, y + 9, 6, T - 20, "#8fa6b8"); rect(x + 4 + w * 0.72, y + 9, 5, T - 20, "#6f8698");
+      rect(x + 4 + w - 3, y + 8, 3, 5, "#ffe8a0"); rect(x + 4 + w - 3, y + T - 15, 3, 5, "#ffe8a0");
+    }
+    if (c === "W" && !drawn.has(k)) {
+      const cells = []; for (let dy = 0; ch(cx, cy + dy) === "W"; dy++) for (let dx = 0; ch(cx + dx, cy + dy) === "W"; dx++) { cells.push([dx, dy]); drawn.add(k + dx + dy * GW); }
+      const w = (Math.max(...cells.map((q) => q[0])) + 1) * T, h = (Math.max(...cells.map((q) => q[1])) + 1) * T, mx = x + w / 2, my = y + h / 2, r = Math.min(w, h) / 2;
+      g.fillStyle = "#565d6c"; g.beginPath(); g.arc(mx, my, r, 0, 7); g.fill();
+      g.fillStyle = "#173f5a"; g.beginPath(); g.arc(mx, my, r - 7, 0, 7); g.fill();
+      g.strokeStyle = "#2f6f94"; g.lineWidth = 2; for (const rr of [r * 0.35, r * 0.6]) { g.beginPath(); g.arc(mx, my, rr, 0, 7); g.stroke(); }
+      g.fillStyle = "#6d7586"; g.beginPath(); g.arc(mx, my, 7, 0, 7); g.fill();
+    }
+    if (c === "L") { g.fillStyle = "#0008"; g.beginPath(); g.arc(x + T / 2 + 3, y + T / 2 + 3, 6, 0, 7); g.fill(); g.fillStyle = "#30343f"; g.beginPath(); g.arc(x + T / 2, y + T / 2, 6, 0, 7); g.fill(); g.fillStyle = "#ffd28a"; g.beginPath(); g.arc(x + T / 2, y + T / 2, 3, 0, 7); g.fill(); }
+  }
+  return c;
+}
+
+/** Someone, seen from above: feet, arms, body, head. Zombies hold their arms out; a bite turns you green over turnMs. */
+function drawPerson(c, now) {
+  const t = now / 1000, seed = hashStr(c.id) % 97, look = c.turn >= 0 ? c.turn : c.z ? 1 : 0; // 0 human … 1 zombie
+  const skin = mix(SKIN, ZSKIN, look), shirt = look > 0 ? mix(c.color, "#3b4a3a", 0.45 * look) : c.color;
+  const walk = c.m ? Math.sin(t * (c.z ? 9 : 13) + seed) : 0, push = clamp(1 - (now - c.shove) / 300, 0, 1);
+  ctx.save();
+  ctx.translate(c.x + (c.turn >= 0 ? (Math.random() - 0.5) * 4 : 0), c.y);
+  ctx.fillStyle = "#0007"; ctx.beginPath(); ctx.ellipse(3, 5, R * 1.05, R * 0.75, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.rotate(c.a + (c.z && c.m ? Math.sin(t * 4 + seed) * 0.15 : 0)); // zombies lurch
+  ctx.fillStyle = "#15171d";
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(walk * s * 6, s * 6, 5, 3.6, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = skin; ctx.lineWidth = 5; ctx.lineCap = "round";
+  for (const s of [-1, 1]) {
+    ctx.beginPath();
+    if (look >= 0.5) { ctx.moveTo(2, s * 9); ctx.lineTo(R + 9 + walk * s * 2, s * 6); }
+    else if (push > 0) { ctx.moveTo(2, s * 10); ctx.lineTo(R + 2 + 9 * push, s * 6); }
+    else { ctx.moveTo(0, s * 10); ctx.lineTo(4 - walk * s * 5, s * 12); }
+    ctx.stroke();
+  }
+  ctx.fillStyle = shirt; ctx.beginPath(); ctx.ellipse(0, 0, R * 0.75, R, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#0006"; ctx.lineWidth = 1.5; ctx.stroke();
+  if (look > 0.5) { ctx.strokeStyle = "#0005"; ctx.beginPath(); ctx.moveTo(-6, -8); ctx.lineTo(-2, -3); ctx.moveTo(-7, 6); ctx.lineTo(-1, 9); ctx.stroke(); }
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(1, 0, 7.5, 0, Math.PI * 2); ctx.fill();
+  if (look < 0.5) {
+    ctx.fillStyle = HAIR[seed % HAIR.length]; ctx.beginPath(); ctx.arc(0, 0, 7.8, Math.PI * 0.55, Math.PI * 1.45); ctx.fill();
+    ctx.fillStyle = "#2a2d36"; ctx.fillRect(R - 3 - walk * 3, 8, 9, 4); // the flashlight
+  } else { ctx.fillStyle = "#5c8a48"; ctx.beginPath(); ctx.arc(-2, 2, 3.5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+/** What glows in the dark, drawn after it: zombie eyes, stars over the stunned, name tags. */
+function drawGlowBits(c, now) {
+  const t = now / 1000;
+  if ((c.z && c.turn < 0) || c.turn > 0.5) {
+    const ca = Math.cos(c.a), sa = Math.sin(c.a);
+    for (const s of [-1, 1]) {
+      const ex = c.x + ca * 5 - sa * s * 3, ey = c.y + sa * 5 + ca * s * 3;
+      ctx.fillStyle = "#ff3b3b55"; ctx.beginPath(); ctx.arc(ex, ey, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ff5b4b"; ctx.beginPath(); ctx.arc(ex, ey, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  if (c.stun) for (let i = 0; i < 3; i++) { const a = t * 5 + (i * Math.PI * 2) / 3; star(c.x + Math.cos(a) * 11, c.y - 6 + Math.sin(a) * 5, 3.2, "#ffe066"); }
+  if (c.last) {
+    ctx.strokeStyle = `rgba(255,80,80,${0.55 + 0.35 * Math.sin(t * 8)})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(c.x, c.y, R + 9 + Math.sin(t * 8) * 2, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (c.mine && !c.z && now < me.shoveReady && !ATTRACT) { // the shove recharging
+    ctx.strokeStyle = "#ff9a5acc"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(c.x, c.y, R + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - (me.shoveReady - now) / CONFIG.shoveCooldown)); ctx.stroke();
+  }
+  if (c.mine && !ATTRACT) { ctx.strokeStyle = "#ffffff55"; ctx.lineWidth = 2; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.arc(c.x, c.y, R + 5, t * 2, t * 2 + Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  if (!ATTRACT && !c.mine) {
+    ctx.font = `${c.bot ? 600 : 700} ${c.bot ? 10 : 11}px system-ui, sans-serif`; ctx.textAlign = "center";
+    ctx.lineWidth = 3; ctx.strokeStyle = "#000c"; ctx.strokeText(c.name, c.x, c.y - 21);
+    ctx.fillStyle = c.z ? "#a6e89a" : c.bot ? "#ffffffb0" : "#fff"; ctx.fillText(c.name, c.x, c.y - 21);
+  }
+}
+function star(x, y, r, col) {
+  ctx.fillStyle = col; ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+  ctx.fill();
+}
+/** An item's picture (s = size, about its radius). Shared by the town and the item buttons. */
+function itemIcon(g, kind, x, y, s) {
+  g.save(); g.translate(x, y); g.scale(s / 12, s / 12); g.lineCap = "round"; g.lineJoin = "round";
+  if (kind === "s") { // a winged sneaker
+    g.fillStyle = "#4da3ff"; g.beginPath(); g.moveTo(-10, 4); g.lineTo(-9, -6); g.quadraticCurveTo(-3, -7, 0, -2); g.quadraticCurveTo(8, -1, 10, 4); g.closePath(); g.fill();
+    g.fillStyle = "#fff"; g.fillRect(-10, 4, 21, 3); g.strokeStyle = "#fff"; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(-8, -9); g.lineTo(-3, -11); g.moveTo(-9, -12); g.lineTo(-5, -14); g.stroke();
+  }
+  if (kind === "d") { // a megaphone
+    g.fillStyle = "#ff9f43"; g.beginPath(); g.moveTo(-8, -3); g.lineTo(4, -9); g.lineTo(4, 9); g.lineTo(-8, 3); g.closePath(); g.fill();
+    g.fillStyle = "#e0e4ea"; g.fillRect(-11, -3, 4, 6); g.fillStyle = "#c46a1c"; g.fillRect(-4, 3, 3, 6);
+    g.strokeStyle = "#fff"; g.lineWidth = 1.6; for (const r of [8, 12]) { g.beginPath(); g.arc(4, 0, r, -0.6, 0.6); g.stroke(); }
+  }
+  if (kind === "f") { // a flashbang
+    g.fillStyle = "#3a3f4c"; g.beginPath(); g.arc(0, 1, 9, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "#ffe066"; g.lineWidth = 2.5; g.beginPath(); g.arc(0, 1, 6.5, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = "#ffe066"; g.beginPath(); g.moveTo(1, -5); g.lineTo(-3, 2); g.lineTo(0, 2); g.lineTo(-1, 7); g.lineTo(3, 0); g.lineTo(0, 0); g.closePath(); g.fill();
+    g.strokeStyle = "#cfd5df"; g.lineWidth = 1.6; g.beginPath(); g.arc(6, -8, 3, 0, Math.PI * 2); g.stroke();
+  }
+  if (kind === "b") { // two crossed planks
+    for (const a of [-0.6, 0.6]) { g.save(); g.rotate(a); g.fillStyle = "#b07a42"; g.fillRect(-12, -3.5, 24, 7); g.fillStyle = "#8a5a2c"; g.fillRect(-12, 1.5, 24, 2); g.restore(); }
+    g.fillStyle = "#d8dde6"; for (const [nx, ny] of [[-7, -5], [7, -5], [-7, 5], [7, 5]]) { g.beginPath(); g.arc(nx, ny, 1.4, 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+}
+function drawItems(w, now) {
+  const t = now / 1000;
+  for (const it of w.items) {
+    const bob = Math.sin(t * 3 + it[0]) * 2.5, col = { s: "77,163,255", d: "255,159,67", f: "255,224,102", b: "200,140,80" }[it[1]];
+    const gr = ctx.createRadialGradient(it[2], it[3], 2, it[2], it[3], 26); gr.addColorStop(0, `rgba(${col},.45)`); gr.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(it[2], it[3], 26, 0, Math.PI * 2); ctx.fill();
+    itemIcon(ctx, it[1], it[2], it[3] + bob, 11);
+  }
+}
+function drawDecoys(w, now) {
+  const t = now / 1000;
+  for (const d of w.dec) {
+    const [, x, y] = d, wob = Math.sin(t * 9) * 0.12;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(wob);
+    ctx.fillStyle = "#0007"; ctx.beginPath(); ctx.ellipse(3, 5, 13, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#c9a26b"; ctx.beginPath(); ctx.roundRect(-11, -13, 22, 26, 5); ctx.fill(); // cardboard
+    ctx.strokeStyle = "#8a6a3e"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = "#2a2d36"; ctx.beginPath(); ctx.arc(-4, -3, 2, 0, Math.PI * 2); ctx.arc(4, -3, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 4, 4, 0, Math.PI); ctx.fill();
+    ctx.restore();
+  }
+}
+function drawDecoyShouts(w, now) {
+  for (const d of w.dec) {
+    if (Math.floor(now / 450) % 2) continue;
+    ctx.fillStyle = "#ff4b4b"; ctx.beginPath(); ctx.arc(d[1], d[2] - 16, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.font = "900 13px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "#000"; ctx.strokeText("HEY!", d[1], d[2] - 24); ctx.fillStyle = "#ffe066"; ctx.fillText("HEY!", d[1], d[2] - 24);
+  }
+}
+function drawBarricades(w, now) {
+  for (const id of Object.keys(w.bar)) {
+    const door = DOORS[id];
+    if (!door) continue;
+    for (const k of door.cells) {
+      const c = centerOf(k), across = ch((k % GW) - 1, (k / GW) | 0) === "#" || ch((k % GW) + 1, (k / GW) | 0) === "#";
+      ctx.save(); ctx.translate(c.x, c.y); if (!across) ctx.rotate(Math.PI / 2);
+      for (const [oy, a] of [[-9, -0.12], [0, 0.1], [9, -0.06]]) { ctx.save(); ctx.translate(0, oy); ctx.rotate(a); ctx.fillStyle = "#0008"; ctx.fillRect(-21, -2, 44, 8); ctx.fillStyle = "#b07a42"; ctx.fillRect(-22, -4, 44, 7); ctx.fillStyle = "#8a5a2c"; ctx.fillRect(-22, 1, 44, 2); ctx.fillStyle = "#d8dde6"; ctx.fillRect(-17, -2, 2, 2); ctx.fillRect(15, -2, 2, 2); ctx.restore(); }
+      ctx.restore();
+    }
+  }
+}
+
+// Particles: sparks and rings live a moment; goo stays on the ground a while (drawn under everyone).
+const parts = [], goo = [];
+function burst(x, y, colors, n, speed, life = 0.7, size = 3) {
+  for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = speed * (0.3 + Math.random() * 0.7); parts.push({ kind: "dot", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: life * (0.6 + Math.random() * 0.4), max: life, color: colors[i % colors.length], size }); }
+  if (parts.length > 500) parts.splice(0, parts.length - 500);
+}
+const ring = (x, y, color, r, life, width = 4) => parts.push({ kind: "ring", x, y, r, life, max: life, color, width });
+const floatText = (x, y, text, color) => parts.push({ kind: "text", x, y, vy: -34, life: 1.3, max: 1.3, text, color });
+function splat(x, y, color, n) { for (let i = 0; i < n; i++) goo.push({ x: x + (Math.random() - 0.5) * 30, y: y + (Math.random() - 0.5) * 30, r: 2 + Math.random() * 6, color, life: 9 }); if (goo.length > 240) goo.splice(0, goo.length - 240); }
+function drawGoo(dt) {
+  for (let i = goo.length - 1; i >= 0; i--) { const p = goo[i]; p.life -= dt; if (p.life <= 0) { goo.splice(i, 1); continue; } ctx.globalAlpha = Math.min(1, p.life / 3) * 0.8; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+}
+function drawParts(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life -= dt;
+    if (p.life <= 0) { parts.splice(i, 1); continue; }
+    const k = p.life / p.max;
+    ctx.globalAlpha = Math.min(1, k * 1.6);
+    if (p.kind === "dot") { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 1 - 3 * dt; p.vy *= 1 - 3 * dt; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (0.5 + k * 0.5), 0, Math.PI * 2); ctx.fill(); }
+    if (p.kind === "ring") { ctx.strokeStyle = p.color; ctx.lineWidth = p.width * k; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 - k * k) + 4, 0, Math.PI * 2); ctx.stroke(); }
+    if (p.kind === "text") { p.y += p.vy * dt; ctx.font = "900 15px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.lineWidth = 3; ctx.strokeStyle = "#000"; ctx.strokeText(p.text, p.x, p.y); ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y); }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** The night: dark everywhere except lamps, flashlights, and whatever is near you. Drawn at half resolution, then stretched. */
+const fx = { flashAt: -1e9, flashK: 0, bittenAt: -1e9 };
+function drawDark(G, w, list, now, ox, oy) {
+  const s = cam.z / 2, X = (x) => x * s + ox / 2, Y = (y) => y * s + oy / 2, Wd = dk.width, Hd = dk.height;
+  dctx.globalCompositeOperation = "source-over"; dctx.clearRect(0, 0, Wd, Hd);
+  dctx.fillStyle = `rgba(4,6,14,${CONFIG.dark})`; dctx.fillRect(0, 0, Wd, Hd);
+  dctx.globalCompositeOperation = "destination-out";
+  const seen = (x, y, r) => X(x) > -r * s && Y(y) > -r * s && X(x) < Wd + r * s && Y(y) < Hd + r * s;
+  const hole = (x, y, r, a) => {
+    if (!seen(x, y, r)) return;
+    const g = dctx.createRadialGradient(X(x), Y(y), 0, X(x), Y(y), r * s); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(0.5, `rgba(0,0,0,${a * 0.75})`); g.addColorStop(1, "rgba(0,0,0,0)");
+    dctx.fillStyle = g; dctx.beginPath(); dctx.arc(X(x), Y(y), r * s, 0, Math.PI * 2); dctx.fill();
+  };
+  const cone = (x, y, ang, r, half, a) => {
+    if (!seen(x, y, r)) return;
+    const g = dctx.createRadialGradient(X(x), Y(y), 0, X(x), Y(y), r * s); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(0.6, `rgba(0,0,0,${a * 0.8})`); g.addColorStop(1, "rgba(0,0,0,0)");
+    dctx.fillStyle = g;
+    for (const [h, k] of [[half * 1.4, 0.45], [half, 1]]) { dctx.globalAlpha = k; dctx.beginPath(); dctx.moveTo(X(x), Y(y)); dctx.arc(X(x), Y(y), r * s, ang - h, ang + h); dctx.closePath(); dctx.fill(); }
+    dctx.globalAlpha = 1;
+  };
+  for (const l of LAMPS) hole(l.x, l.y, 170, 0.85);
+  for (const c of list) {
+    if (c.z && c.turn < 0) continue; // zombies carry no light
+    if (c.mine) { cone(c.x, c.y, c.a, 330, 0.55, 1); hole(c.x, c.y, 130, 0.95); }
+    else { cone(c.x, c.y, c.a, 230, 0.5, 0.85); hole(c.x, c.y, 55, 0.6); }
+  }
+  if (me.z) hole(me.x, me.y, 250, 0.9); // zombies see a little in the dark
+  if (ATTRACT) hole(cam.x, cam.y, 340, 0.7); // the preview lights the chase it follows
+  for (const d of w.dec) hole(d[1], d[2], 60, 0.7);
+  const fl = (now - fx.flashAt) / 700;
+  if (fl < 1) hole(fx.fx, fx.fy, 480 * (0.4 + fl), 1 - fl);
+  dctx.globalCompositeOperation = "source-over";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.drawImage(dk, 0, 0, VW, VH);
+}
+
+function moveCamera(G, list, dt, now) {
+  let fx_ = me.x, fy_ = me.y;
+  if (ATTRACT) { // the preview follows the closest chase
+    if (now > cam.pickAt) {
+      cam.pickAt = now + 1500;
+      let best = null, bd = 420;
+      for (const z of list) if (z.z && z.turn < 0) for (const h of list) if (!h.z) { const d = dist(z, h); if (d < bd) { bd = d; best = [z.id, h.id]; } }
+      cam.pair = best;
+    }
+    const a = cam.pair && list.find((c) => c.id === cam.pair[0]), b = cam.pair && list.find((c) => c.id === cam.pair[1]);
+    if (a && b) { fx_ = (a.x + b.x) / 2; fy_ = (a.y + b.y) / 2; }
+  }
+  cam.z += (baseZoom() - cam.z) * Math.min(1, dt * 3);
+  const k = 1 - Math.pow(ATTRACT ? 0.08 : 0.0008, dt);
+  cam.x += (fx_ - cam.x) * k; cam.y += (fy_ - cam.y) * k;
+  const hw = VW / 2 / cam.z, hh = VH / 2 / cam.z; // keep the view on the town
+  cam.x = hw * 2 >= WW ? WW / 2 : clamp(cam.x, hw - 40, WW - hw + 40);
+  cam.y = hh * 2 >= WH ? WH / 2 : clamp(cam.y, hh - 40, WH - hh + 40);
+  cam.shake = Math.max(0, cam.shake - dt * 1.5);
+}
+function draw(G, w, now, dt) {
+  const list = drawList(G, w, now);
+  moveCamera(G, list, dt, now);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = "#07090f"; ctx.fillRect(0, 0, VW, VH);
+  const z = cam.z, ox = VW / 2 - cam.x * z + (Math.random() - 0.5) * cam.shake * 14, oy = VH / 2 - cam.y * z + (Math.random() - 0.5) * cam.shake * 14;
+  const inWorld = () => ctx.setTransform(DPR * z, 0, 0, DPR * z, DPR * ox, DPR * oy);
+  inWorld();
+  ctx.drawImage(mapCanvas, 0, 0, WW, WH);
+  drawGoo(dt);
+  drawBarricades(w, now);
+  drawDecoys(w, now);
+  list.sort((a, b) => a.y - b.y);
+  for (const c of list) drawPerson(c, now);
+  drawDark(G, w, list, now, ox, oy);
+  inWorld();
+  ctx.globalCompositeOperation = "lighter";
+  for (const l of LAMPS) { const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 170); g.addColorStop(0, "rgba(255,180,90,.16)"); g.addColorStop(1, "rgba(255,180,90,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(l.x, l.y, 170, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalCompositeOperation = "source-over";
+  drawItems(w, now);
+  drawDecoyShouts(w, now);
+  for (const c of list) drawGlowBits(c, now);
+  drawParts(dt);
+  drawScreen(G, list, now);
+}
+/** Screen-space touches: the flash, a red pulse while there's a last survivor, an arrow to them. */
+function drawScreen(G, list, now) {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const fl = (now - fx.flashAt) / 900;
+  if (fl < 1) { ctx.fillStyle = `rgba(255,255,255,${fx.flashK * (1 - fl) * 0.9})`; ctx.fillRect(0, 0, VW, VH); }
+  const last = list.find((c) => c.last), t = now / 1000, hurt = clamp(1 - (now - fx.bittenAt) / 1200, 0, 1);
+  const red = Math.max(hurt, last ? 0.35 + 0.25 * Math.sin(t * 7.5) : 0);
+  if (red > 0) {
+    const g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.max(VW, VH) * 0.75);
+    g.addColorStop(0, "rgba(160,0,0,0)"); g.addColorStop(1, `rgba(170,0,10,${red * 0.6})`); ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  }
+  if (me.z && !ATTRACT) { ctx.fillStyle = "rgba(40,120,50,.10)"; ctx.fillRect(0, 0, VW, VH); }
+  if (last && !last.mine && !ATTRACT) { // an arrow at the edge of the screen pointing at the last survivor
+    const sx = (last.x - cam.x) * cam.z + VW / 2, sy = (last.y - cam.y) * cam.z + VH / 2, m = 46;
+    if (sx < m || sy < m || sx > VW - m || sy > VH - m) {
+      const a = Math.atan2(sy - VH / 2, sx - VW / 2), ex = clamp(sx, m, VW - m), ey = clamp(sy, m + 50, VH - m - 40);
+      ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+      ctx.fillStyle = `rgba(255,70,70,${0.75 + 0.25 * Math.sin(t * 8)})`; ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -12); ctx.lineTo(-4, 0); ctx.lineTo(-10, 12); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.font = "800 11px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#ff8a8a"; ctx.fillText("LAST", ex - Math.cos(a) * 26, ey - Math.sin(a) * 26 + 4);
+    }
+  }
+}
+
+// ── HUD & RESULTS ───────────────────────────────────────────────────────────────────
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const fmt = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`;
+const local = { big: "", bigUntil: 0, toast: "", toastUntil: 0 };
+const bigText = (html, ms) => { local.big = html; local.bigUntil = performance.now() + ms; };
+const toast = (text) => { local.toast = text; local.toastUntil = performance.now() + 2600; };
+let board = null, boardFor = -1, reconnecting = false, iconShown = null;
+function hud(G, w, now) {
+  const t = Date.now(), id = net.sessionId, e = G.pp[id], z = !!(e && e[0]), left = humansLeft(G).length, held = w.inv[id] || "";
+  const counter = `<small class="${left === 1 ? "one" : ""}">${left} HUMAN${left === 1 ? "" : "S"} LEFT</small>`;
+  let big = now < local.bigUntil ? local.big : "";
+  if (ATTRACT) {
+    $("round").innerHTML = G.phase === "over" ? "" : counter;
+    for (const k of ["role", "msg", "net"]) $(k).textContent = "";
+    $("big").innerHTML = big ? `<div>${big}</div>` : "";
+    return;
+  }
+  $("round").innerHTML = G.phase === "over" ? "" : `${G.phase === "brief" ? "Get ready" : fmt(Math.max(0, G.endsAt - t))}${counter}`;
+  $("role").classList.toggle("zombie", z); $("role").classList.toggle("human", !z);
+  $("role").textContent = !e || G.phase === "over" ? "" : z ? "ZOMBIE" : G.last === id ? "LAST SURVIVOR" : "SURVIVOR";
+  if (G.phase === "brief" && e) {
+    const n = Math.max(1, Math.ceil((G.startAt - t) / 1000));
+    big = z ? `<span class="z">${n}</span><small>You're a zombie. Touch survivors to turn them.</small>` : `RUN!<small>The dead rise in ${n}…</small>`;
+  }
+  $("big").innerHTML = big ? `<div>${big}</div>` : "";
+  let msg = now < local.toastUntil ? local.toast : "";
+  if (!msg && G.phase !== "over" && e) {
+    if (!me.playAt) me.playAt = now;
+    if (now - me.playAt < 10000) msg = z ? (touchUI ? "Drag to run · touch survivors to turn them" : "WASD or hold the mouse to run · touch survivors to turn them")
+      : touchUI ? "Drag to run · SHOVE pushes zombies back · grab glowing items" : "WASD or hold the mouse to run · Space shoves · E uses your item";
+  }
+  if (!e && G.phase !== "over") msg = "You'll play the next round. Watch out!";
+  $("msg").textContent = msg;
+  const n = livePlayers().length;
+  $("net").textContent = net.offline ? "Offline: playing with bots" : reconnecting ? "Reconnecting…" : `Online · ${n} player${n === 1 ? "" : "s"}${hosting ? " · you run the outbreak" : ""}`;
+  const canAct = !!e && !z && G.phase !== "over";
+  $("slot").hidden = touchUI || !canAct || !held;
+  $("shove").hidden = $("use").hidden = !touchUI || !canAct;
+  $("shove").classList.toggle("wait", now < me.shoveReady);
+  $("use").classList.toggle("wait", !held);
+  if (iconShown !== held) { iconShown = held; paintIcon($("slotIcon"), held); paintIcon($("useIcon"), held); $("useIcon").hidden = !held; $("useText").hidden = !!held; $("slotText").innerHTML = held ? `<b>E</b> ${ITEMS[held].name}: ${ITEMS[held].tip}` : ""; }
+  const over = G.phase === "over" && t - G.endedAt > 1300;
+  $("over").hidden = !over;
+  if (over) results(G, t);
+}
+function paintIcon(c, kind) { const g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height); if (kind) itemIcon(g, kind, c.width / 2, c.height / 2, c.width * 0.36); }
+function results(G, t) {
+  const id = net.sessionId, inRound = !!G.pp[id] && me.g === G.id, mine = scoreOf(G, id);
+  const lastName = G.last ? (G.last === id ? "You" : nameOf(G.last)) : "";
+  $("overTitle").textContent = G.win === "humans" ? (inRound && mine.human ? "You made it! Survivors win" : "Survivors win!") : G.win === "zombies" ? (lastName ? `${lastName} fell last. Zombies win` : "Everyone turned. Zombies win") : "Round over";
+  $("overLine").textContent = inRound ? `Human for ${fmt(mine.ms)} · ${mine.bites} bite${mine.bites === 1 ? "" : "s"} · ${mine.pts} point${mine.pts === 1 ? "" : "s"}` : "You'll play the next round.";
+  const all = Object.keys(G.pp).map((i) => ({ id: i, name: i === id ? "You" : nameOf(i), ...scoreOf(G, i) })).sort((a, b) => b.pts - a.pts);
+  const rows = all.slice(0, 8), mineRow = all.findIndex((r) => r.id === id);
+  if (mineRow >= 8) rows[7] = all[mineRow]; // always show your own line
+  $("results").innerHTML = rows.map((r) => `<li value="${all.indexOf(r) + 1}" class="${r.id === id ? "me" : ""} ${r.human ? "" : "z"}">${esc(r.name)}<span>${fmt(r.ms)} · ${r.bites} bite${r.bites === 1 ? "" : "s"} · ${r.pts}</span></li>`).join("");
+  $("next").textContent = `Next round in ${Math.max(0, Math.ceil((G.endsAt - t) / 1000))}s`;
+  if (boardFor !== G.id) { boardFor = G.id; showBoard(inRound ? mine.pts : 0); }
+}
+function showBoard(score) {
+  const list = $("board");
+  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
+  list.innerHTML = "<li>Loading…</li>";
+  (score > 0 ? board.submit(score).catch(() => null) : Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${e.score} pts</span></li>`).join("") : "<li>No scores yet. Set the first.</li>";
+  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+}
+/** Keep a color nobody else has: the later sessionId gives way, and the bots' colors count as taken. */
+function fixColor() {
+  const others = Object.entries(S.entities.players || {}).filter(([id]) => id !== net.sessionId), bots = botsNow().map((b) => b.color);
+  if (!others.some(([id, p]) => id < net.sessionId && p.c === myColor) && !bots.includes(myColor)) return;
+  const used = new Set([...others.map(([, p]) => p.c), ...bots]), free = COLORS.find((c) => !used.has(c));
+  if (free && free !== myColor) { myColor = free; net.me.set("c", myColor); }
+}
+$("again").onclick = () => { const G = game(); if (!G || G.phase !== "over") return; if (hosting) host.again = true; else net.send("again", {}); $("over").hidden = true; };
+
+/** One-off effects, worked out from what changed in state (so nobody misses one). */
+let prevG = null, evSeen = { g: -1, max: Infinity };
+const shoveAnim = new Map();
+function effects(G, w, now) {
+  const id = net.sessionId, near = (x, y) => clamp(1 - Math.hypot(x - cam.x, y - cam.y) / 900, 0.15, 1);
+  if (w.g === G.id) {
+    if (evSeen.g !== w.g) evSeen = { g: w.g, max: evSeen.max === Infinity ? Math.max(0, ...w.ev.map((e) => e[0])) : 0 }; // joining: old events already happened
+    for (const e of w.ev) {
+      if (e[0] <= evSeen.max) continue;
+      evSeen.max = e[0];
+      const [, kind, x, y, a, b] = e;
+      if (kind === "bite") {
+        burst(x, y, ["#7ee081", "#b3ff8a", "#c0392b"], 26, 260, 0.8, 3.5); splat(x, y, "#3f7a2c", 9); ring(x, y, "#8ef08a", 70, 0.5);
+        sound("bite", near(x, y));
+        if (b === id) floatText(x, y - 20, `+${CONFIG.points.bite} BITE`, "#8ef08a");
+        if (a === id && !ATTRACT) { cam.shake = 0.9; fx.bittenAt = now; bigText(`<span class="z">BITTEN!</span><small>You're one of them now. Catch the rest!</small>`, 2200); sound("turned"); }
+      }
+      if (kind === "pick") { burst(x, y, ["#fff", "#ffe066"], 12, 120, 0.5, 2.5); if (a === id) { sound("pick"); toast(`${ITEMS[b].name}! ${touchUI ? "Tap the item button" : "Press E"} to ${ITEMS[b].tip}.`); } }
+      if (kind === "shoes") { burst(x, y, ["#4da3ff", "#bfe0ff"], 16, 160, 0.5); if (a === id) sound("shoes"); }
+      if (kind === "decoy") { burst(x, y, ["#ff9f43", "#ffe066"], 14, 140, 0.5); sound("decoy", near(x, y)); }
+      if (kind === "flash") {
+        ring(x, y, "#ffffff", CONFIG.flashReach, 0.6, 8); burst(x, y, ["#ffffff", "#fff6c8"], 30, 380, 0.6, 3);
+        const k = clamp(1 - Math.hypot(x - cam.x, y - cam.y) / 500, 0, 1) * (ATTRACT ? 0.5 : 1);
+        fx.flashAt = now; fx.fx = x; fx.fy = y; fx.flashK = k; sound("flash", near(x, y)); cam.shake = Math.max(cam.shake, k * 0.6);
+      }
+      if (kind === "boards") { burst(x, y, ["#b07a42", "#e0b07a"], 16, 140, 0.6); sound("boards", near(x, y)); }
+      if (kind === "unbar") { burst(x, y, ["#b07a42", "#8a5a2c"], 14, 180, 0.7); sound("crack", near(x, y)); }
+      if (kind === "shove") { shoveAnim.set(a, now); ring(x, y, "#ffffffcc", CONFIG.shoveReach, 0.35, 5); if (a !== id) sound("shove", near(x, y) * 0.7); }
+      if (kind === "pop") { burst(x, y, ["#c9a26b", "#8a6a3e"], 14, 160, 0.6); }
+      if (kind === "rise") { burst(x, y, ["#7ee081", "#3f7a2c"], 20, 200, 0.7); sound("bite", near(x, y)); }
+    }
+  }
+  if (prevG && prevG.id === G.id) {
+    if (G.phase === "play" && prevG.phase === "brief") { sound("go"); if (isZombie(G, id)) bigText(`<span class="z">GO!</span>`, 700); }
+    if (G.last && !prevG.last && G.phase === "play") {
+      const mine = G.last === id;
+      bigText(`<span class="r">LAST SURVIVOR</span><small>${mine ? "That's you. Don't stop running!" : esc(nameOf(G.last)) + " is the last one human. Get them!"}</small>`, 2600);
+      sound("last"); cam.shake = Math.max(cam.shake, 0.5);
+      if (mine) me.shoveReady = 0; // adrenaline: your shove is ready
+    }
+    if (G.phase === "over" && prevG.phase !== "over") {
+      sound(G.win === "humans" ? "win" : "lose");
+      bigText(G.win === "humans" ? "SURVIVORS WIN" : G.win === "zombies" ? `<span class="z">ZOMBIES WIN</span>` : "", 1300);
+    }
+  }
+  if (G.phase === "play" && G.last && now > (fx.beatAt || 0)) { fx.beatAt = now + 780; sound("beat", G.last === id ? 1 : 0.4); } // a heartbeat while there's a last survivor
+  prevG = { id: G.id, phase: G.phase, last: G.last }; // a copy: the host changes its G in place
+}
+
+// ── INPUT & SOUND ───────────────────────────────────────────────────────────────────
+const touchUI = matchMedia("(pointer: coarse)").matches && !ATTRACT;
+if (touchUI) $("msg").style.bottom = "calc(max(18px, env(safe-area-inset-bottom)) + 190px)";
+const keys = new Set(), stick = { id: -1, ox: 0, oy: 0, mx: 0, my: 0 }, mouse = { down: false, x: 0, y: 0 };
+addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase(); keys.add(k); unlockAudio();
+  if (k === " ") { e.preventDefault(); if (!e.repeat) tryShove(); }
+  if ((k === "e" || k === "q" || k === "shift") && !e.repeat) tryUse();
+});
+addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+addEventListener("blur", () => { keys.clear(); mouse.down = false; });
+/** Keys, the touch stick, or (held mouse) toward the pointer, through the camera that drew the frame. */
+function readInput() {
+  const k = (a, b) => (keys.has(a) || keys.has(b) ? 1 : 0);
+  let mx = k("d", "arrowright") - k("a", "arrowleft") + stick.mx, my = k("s", "arrowdown") - k("w", "arrowup") + stick.my;
+  if (!mx && !my && mouse.down) {
+    const wx = cam.x + (mouse.x - VW / 2) / cam.z, wy = cam.y + (mouse.y - VH / 2) / cam.z, dx = wx - me.x, dy = wy - me.y, d = Math.hypot(dx, dy);
+    if (d > 8) { mx = dx / d; my = dy / d; }
+  }
+  return { mx, my };
+}
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+cv.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); unlockAudio();
+  if (e.pointerType === "mouse") { if (e.button === 2) tryShove(); else mouse.down = true; mouse.x = e.clientX; mouse.y = e.clientY; return; }
+  if (stick.id >= 0) return;
+  cv.setPointerCapture(e.pointerId);
+  Object.assign(stick, { id: e.pointerId, ox: e.clientX, oy: e.clientY, mx: 0, my: 0 });
+  Object.assign($("stick").style, { left: e.clientX + "px", top: e.clientY + "px" }); $("stick").hidden = false;
+});
+cv.addEventListener("pointermove", (e) => {
+  if (e.pointerType === "mouse") { mouse.x = e.clientX; mouse.y = e.clientY; }
+  if (e.pointerId !== stick.id) return;
+  const dx = e.clientX - stick.ox, dy = e.clientY - stick.oy, d = Math.hypot(dx, dy), k = Math.min(1, d / 45) / (d || 1);
+  stick.mx = dx * k; stick.my = dy * k;
+  $("stick").firstElementChild.style.transform = `translate(${stick.mx * 35}px, ${stick.my * 35}px)`;
+});
+for (const ev of ["pointerup", "pointercancel"]) cv.addEventListener(ev, (e) => {
+  if (e.pointerType === "mouse" && e.button !== 2) mouse.down = false;
+  if (e.pointerId === stick.id) { Object.assign(stick, { id: -1, mx: 0, my: 0 }); $("stick").hidden = true; }
+});
+$("shove").addEventListener("pointerdown", (e) => { e.preventDefault(); unlockAudio(); tryShove(); });
+$("use").addEventListener("pointerdown", (e) => { e.preventDefault(); unlockAudio(); tryUse(); });
+document.addEventListener("touchmove", (e) => { if (!e.target.closest(".card")) e.preventDefault(); }, { passive: false });
+
+let AC = null, NOISE = null;
+function unlockAudio() {
+  if (AC || ATTRACT) return;
+  try {
+    AC = new AudioContext();
+    NOISE = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+    const d = NOISE.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  } catch { AC = null; }
+}
+function sound(kind, vol = 1) {
+  if (!AC) return;
+  const t0 = AC.currentTime;
+  const tone = (f, d, type, v, f2, delay = 0) => {
+    const o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f, t0 + delay); o.frequency.exponentialRampToValueAtTime(f2, t0 + delay + d);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.setValueAtTime(v * vol, t0 + delay); g.gain.exponentialRampToValueAtTime(0.001, t0 + delay + d); o.connect(g).connect(AC.destination); o.start(t0); o.stop(t0 + delay + d);
+  };
+  const hiss = (d, v, freq, delay = 0) => {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = NOISE; f.type = "bandpass"; f.frequency.value = freq;
+    g.gain.setValueAtTime(v * vol, t0 + delay); g.gain.exponentialRampToValueAtTime(0.001, t0 + delay + d); s.connect(f).connect(g).connect(AC.destination); s.start(t0 + delay); s.stop(t0 + delay + d);
+  };
+  if (kind === "bite") { tone(150, 0.5, "sawtooth", 0.08, 70); hiss(0.25, 0.12, 900); }
+  if (kind === "turned") { tone(110, 0.9, "sawtooth", 0.12, 45); tone(165, 0.8, "square", 0.04, 60, 0.05); }
+  if (kind === "shove") hiss(0.18, 0.25, 1400);
+  if (kind === "pick") { tone(660, 0.12, "triangle", 0.12, 990); tone(990, 0.15, "triangle", 0.1, 1320, 0.08); }
+  if (kind === "shoes") tone(300, 0.3, "sine", 0.1, 900);
+  if (kind === "decoy") { tone(520, 0.12, "square", 0.06, 520); tone(700, 0.15, "square", 0.06, 700, 0.15); }
+  if (kind === "flash") { hiss(0.5, 0.5, 2500); tone(3200, 0.9, "sine", 0.05, 2900); }
+  if (kind === "boards") for (let i = 0; i < 3; i++) tone(120, 0.08, "square", 0.1, 60, i * 0.12);
+  if (kind === "crack") hiss(0.3, 0.3, 600);
+  if (kind === "go") { tone(440, 0.25, "square", 0.06, 440); tone(660, 0.4, "square", 0.06, 660, 0.25); }
+  if (kind === "last") { tone(98, 1.4, "sawtooth", 0.08, 92); tone(147, 1.4, "sawtooth", 0.05, 139); tone(196, 1.2, "triangle", 0.06, 185, 0.1); }
+  if (kind === "beat") { tone(70, 0.12, "sine", 0.25, 45); tone(62, 0.12, "sine", 0.18, 40, 0.18); }
+  if (kind === "win") { tone(523, 0.5, "triangle", 0.12, 523); tone(659, 0.5, "triangle", 0.1, 659, 0.12); tone(784, 0.8, "triangle", 0.1, 784, 0.24); }
+  if (kind === "lose") { tone(220, 1.2, "sawtooth", 0.07, 110); tone(233, 1.2, "sawtooth", 0.05, 116); }
+}
+
+// ── MAIN LOOP ───────────────────────────────────────────────────────────────────────
+let last = performance.now(), lastHb = 0, lastHud = 0;
+function frame(now) {
+  requestAnimationFrame(frame); // first, so one bad frame can't stop the game
+  const t0 = performance.now(); // not `now`: the first frame after a freeze can be stamped from before it ended
+  if (frameAt && t0 - frameAt > 1000) { wokeAt = t0; host.was = false; } // woke from a stall: drop my host copy, adopt state again (see isHost)
+  frameAt = t0;
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
+  hosting = isHost();
+  if (now - lastHb > 1000) { lastHb = now; net.me.set("hb", Date.now()); fixColor(); }
+  if (hosting) hostTick(dt, now); else host.was = false;
+  const G = game();
+  if (!G) { // waiting for the host's first round
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = "#07090f"; ctx.fillRect(0, 0, VW, VH);
+    ctx.setTransform(DPR * cam.z, 0, 0, DPR * cam.z, DPR * (VW / 2 - cam.x * cam.z), DPR * (VH / 2 - cam.y * cam.z)); ctx.globalAlpha = 0.4; ctx.drawImage(mapCanvas, 0, 0, WW, WH); ctx.globalAlpha = 1;
+    return;
+  }
+  const w = world();
+  myTick(dt, now, G, w);
+  effects(G, w, now);
+  draw(G, w, now, dt);
+  if (now - lastHud > 100) { lastHud = now; hud(G, w, now); }
+}
+
+(async function start() {
+  net = await connect();
+  me.id = net.sessionId;
+  net.onState((st) => { S = st; });
+  net.on("pick", (m, from) => { if (hosting && host.G && m) applyPick(from, m.i, m); });
+  net.on("use", (m, from) => { if (hosting && host.G) applyUse(from, m); });
+  net.on("shove", (m, from) => { if (hosting && host.G) applyShove(from, m); });
+  net.on("again", () => { if (hosting && host.G && host.G.phase === "over") host.again = true; });
+  net.onDisconnect(() => { reconnecting = true; $("net").textContent = "Reconnecting…"; });
+  net.onReconnect(() => { reconnecting = false; });
+  if (!net.offline && typeof MP !== "undefined") board = MP.auth({ key: MP_CONNECT.key, apiUrl: MP_CONNECT.apiUrl }).leaderboard(CONFIG.board);
+  const taken = new Set([...Object.entries(S.entities.players || {}).filter(([id]) => id !== net.sessionId).map(([, p]) => p.c), ...parse(S.shared.bots, []).map((b) => b[2])]);
+  myColor = COLORS.find((c) => !taken.has(c)) || COLORS[Math.floor(Math.random() * COLORS.length)];
+  net.me.set({ n: myName, c: myColor, hb: Date.now() });
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
