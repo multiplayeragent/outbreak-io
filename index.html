@@ -142,9 +142,10 @@ const CONFIG = {
   //   f  fence       o  tree      t  gravestone      b  bench      c  car      s  shelf
   //   W  fountain    L  street lamp (lights the dark)      Z  grave (zombies rise here)
   //   *  item spot outdoors      +  item spot indoors
+  // Ground that nobody can walk to from the graves (closed off by trees, walls or fences) is left empty.
   map: [
     "ffffffffffffffffffffffffffffffffffffffffffff",
-    "f,,o,,,,,,,o,..,,,,,,,,,,,,,,..,,,o,,,,,o,,f",
+    "f,,,,,,,,,,,,..,,,,,,,,,,,,,,..,,,o,,,,,o,,f",
     "f,##########,..,############,..,ffff,,ffff,f",
     "f,#==+=====#,..,#====+=====#,..,fZ,,,,,,Zf,f",
     "f,#====#===D,..,D==========D,..,f,t,t,t,,f,f",
@@ -171,7 +172,7 @@ const CONFIG = {
     "f..............,#====#=====#,..,#===#,#=+=#f",
     "f.cc..cc..cc...,#=+==#=====#,..,##D##,##D##f",
     "f..............,############,..,,,,,,,,,,,,f",
-    "f,,,,o,,,,o,,..,,,o,,,,,,o,,,..,,o,,*,,,o,,f",
+    "f,,,,o,,,,o,,..,,,,,,,,,,,,,,..,,o,,*,,,o,,f",
     "ffffffffffffffffffffffffffffffffffffffffffff",
   ],
 };
@@ -270,13 +271,27 @@ for (let k = 0; k < GW * GH; k++) {
   door.x = cs.reduce((s, c) => s + c.x, 0) / cs.length; door.y = cs.reduce((s, c) => s + c.y, 0) / cs.length;
   DOORS.push(door);
 }
+// REACH: the squares you can walk to from the first grave. A pocket closed off by trees, walls or
+// fences is not one of them, so nobody starts there, no item lands there and no bot heads there.
+const REACH = new Uint8Array(GW * GH);
+{
+  const flat = MAP.join(""), first = flat.includes("Z") ? flat.indexOf("Z") : [...flat].findIndex((c) => !SOLID.includes(c)), todo = [first];
+  REACH[first] = 1;
+  while (todo.length) {
+    const k = todo.pop(), x = k % GW, y = (k / GW) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const n = x + dx + (y + dy) * GW;
+      if (!SOLID.includes(ch(x + dx, y + dy)) && !REACH[n]) { REACH[n] = 1; todo.push(n); }
+    }
+  }
+}
 const GRAVES = [], ITEM_SPOTS = [], LAMPS = [], WALKABLE = [];
 for (let k = 0; k < GW * GH; k++) {
   const c = MAP[(k / GW) | 0][k % GW];
   if (c === "Z") GRAVES.push(k);
-  if (c === "*" || c === "+") ITEM_SPOTS.push(k);
+  if ((c === "*" || c === "+") && REACH[k]) ITEM_SPOTS.push(k);
   if (c === "L") LAMPS.push(centerOf(k));
-  if (!SOLID.includes(c)) WALKABLE.push(k);
+  if (!SOLID.includes(c) && REACH[k]) WALKABLE.push(k);
 }
 if (!GRAVES.length) GRAVES.push(WALKABLE[0]);
 const graveMid = GRAVES.map(centerOf).reduce((s, c) => ({ x: s.x + c.x / GRAVES.length, y: s.y + c.y / GRAVES.length }), { x: 0, y: 0 });
@@ -452,7 +467,11 @@ function judge(G, w, t) {
     G.pp[pick.id] = [1, decis(G, t), "", G.pp[pick.id][3]]; pushEv(w, "rise", pick.x, pick.y, pick.id); mark("game");
     return;
   }
-  if (left.length === 1 && !G.last && G.n0 > 1) { G.last = left[0].id; mark("game"); }
+  if (left.length === 1 && !G.last && G.n0 > 1) {
+    G.last = left[0].id; mark("game");
+    host.shoveAt.delete(G.last); // adrenaline: the last survivor's shove is ready at once (their own screen resets it too)
+    if (left[0].bot) host.bots.get(G.last).nextShove = 0;
+  }
   if (!left.length) endRound(G, "zombies", t);
   else if (t >= G.endsAt) endRound(G, "humans", t);
 }
@@ -583,7 +602,12 @@ function botInput(b, G, w, all, now, t, zombie) {
   if (d < 6) { b.path.shift(); return STILL; }
   return { mx: dx / d, my: dy / d };
 }
-function setGoal(b, goal, zombie) { b.goal = goal; b.path = goal && !clearLine(b, goal, zombie) ? route(b, goal, zombie) : []; }
+function setGoal(b, goal, zombie) {
+  b.goal = goal; b.path = [];
+  if (!goal || clearLine(b, goal, zombie)) return;
+  b.path = route(b, goal, zombie);
+  if (!b.path.length && zombie) b.path = route(b, goal, false); // boards in the way: crowd the barred doorway instead of walking into a wall
+}
 function wander(b, zombie, now, force) {
   if (!force && b.goal && dist(b, b.goal) > 20 && now < b.wander) return;
   b.wander = now + 3000 + Math.random() * 3000;
@@ -1304,7 +1328,7 @@ cv.addEventListener("pointermove", (e) => {
   stick.mx = dx * k; stick.my = dy * k;
   $("stick").firstElementChild.style.transform = `translate(${stick.mx * 35}px, ${stick.my * 35}px)`;
 });
-for (const ev of ["pointerup", "pointercancel"]) cv.addEventListener(ev, (e) => {
+for (const ev of ["pointerup", "pointercancel"]) addEventListener(ev, (e) => { // on the window: a mouse button let go over the results card still counts
   if (e.pointerType === "mouse" && e.button !== 2) mouse.down = false;
   if (e.pointerId === stick.id) { Object.assign(stick, { id: -1, mx: 0, my: 0 }); $("stick").hidden = true; }
 });
