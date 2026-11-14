@@ -28,6 +28,7 @@
   .card h3 { margin: 14px 0 4px; font-size: 12px; color: #9fb0c8; letter-spacing: 1px; text-transform: uppercase; }
   .card p { margin: 4px 0 0; font-size: 14px; opacity: .9; }
   .card ol { margin: 0; padding-left: 24px; font-size: 14px; }
+  .card li.note { list-style: none; margin-left: -24px; } /* a status line, not a numbered entry */
   .card li { padding: 1px 0; } .card li span { float: right; font-variant-numeric: tabular-nums; opacity: .9; }
   .card li.me { color: #ffcf8a; font-weight: 700; } .card li.z::marker { color: #6fd36f; }
   button.go { margin-top: 16px; width: 100%; min-height: 48px; border: 0; border-radius: 12px; background: #ffb347; color: #2b1700; font: 800 17px system-ui, sans-serif; cursor: pointer; }
@@ -55,7 +56,7 @@
 <div id="over" hidden><div class="card">
   <h2 id="overTitle"></h2><p id="overLine"></p>
   <h3>This round</h3><ol id="results"></ol>
-  <h3>Best rounds</h3><ol id="board"><li>Loading…</li></ol>
+  <h3>Best rounds</h3><ol id="board"><li class="note">Loading…</li></ol>
   <button class="go" id="again">Play again</button>
   <p id="next"></p>
 </div></div>
@@ -1227,11 +1228,11 @@ function results(G, t) {
 }
 function showBoard(score) {
   const list = $("board");
-  if (!board) { list.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
-  list.innerHTML = "<li>Loading…</li>";
+  if (!board) { list.innerHTML = "<li class='note'>Leaderboards need a connection.</li>"; return; }
+  list.innerHTML = "<li class='note'>Loading…</li>";
   (score > 0 ? board.submit(score).catch(() => null) : Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
-    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${e.score} pts</span></li>`).join("") : "<li>No scores yet. Set the first.</li>";
-  }).catch(() => { list.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+    list.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${e.score} pts</span></li>`).join("") : "<li class='note'>No scores yet. Set the first.</li>";
+  }).catch(() => { list.innerHTML = "<li class='note'>Couldn't load the leaderboard.</li>"; });
 }
 /** Keep a color nobody else has: the later sessionId gives way, and the bots' colors count as taken. */
 function fixColor() {
